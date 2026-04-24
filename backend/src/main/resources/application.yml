@@ -13,9 +13,9 @@ spring:
   mail:
     host: smtp.qq.com
     port: 465
-    username: 3173483916@qq.com
-    password: segicmefjabxddjd
-    from: 3173483916@qq.com
+    username: 自己qq号@qq.com
+    password: qq邮箱的smtp码
+    from: 自己qq号@qq.com
     default-encoding: UTF-8
     properties:
       mail:
