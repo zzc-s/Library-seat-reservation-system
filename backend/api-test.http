@@ -1,0 +1,46 @@
+# ========== 使用顺序（避免 403）==========
+# 1. 先点下面「请求 1」左侧的 ▶ 运行登录
+# 2. 再点「请求 2」左侧的 ▶ 运行创建图书（会用请求 1 保存的 token）
+# 若请求 2 仍 403：在登录的 Response 里复制 token，粘贴到「请求 2-手动」里再运行
+
+### 请求 1：登录（必须先运行一次）
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "admin123"
+}
+
+> {%
+  client.global.set("auth_token", response.body.json.token);
+%}
+
+### 请求 2：创建图书（自动用上面登录的 token，请先运行请求 1）
+POST http://localhost:8080/api/books
+Content-Type: application/json
+Authorization: Bearer {{auth_token}}
+
+# 下面空行不能删：头和 body 之间必须有空行
+{
+  "title": "测试图书",
+  "author": "测试作者",
+  "isbn": "978-7-111-00000-0",
+  "categoryId": 1,
+  "stock": 10,
+  "isBorrowable": true
+}
+
+### 请求 2-手动：若上面仍 403，把登录返回的 token 粘贴到下面替换「粘贴token」
+# POST http://localhost:8080/api/books
+# Content-Type: application/json
+# Authorization: Bearer 粘贴token
+#
+# {
+#   "title": "测试图书",
+#   "author": "测试作者",
+#   "isbn": "978-7-111-00000-0",
+#   "categoryId": 1,
+#   "stock": 10,
+#   "isBorrowable": true
+# }

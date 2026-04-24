@@ -1,0 +1,87 @@
+server:
+  port: 8080
+
+# 控制台最后输出 Knife4j 文档地址（毫秒）
+swagger:
+  url:
+    print-delay-ms: 2000
+spring:
+  application:
+    name: library-seat-backend
+  profiles:
+    active: mysql
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: 3173483916@qq.com
+    password: segicmefjabxddjd
+    from: 3173483916@qq.com
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+            port: 465
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  health:
+    redis:
+      enabled: false
+    mail:
+      enabled: false  # 禁用邮件健康检查，避免启动时超时警告
+
+---
+spring:
+  config:
+    activate:
+      on-profile: mysql
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/library_seat?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 300000
+  jackson:
+    time-zone: Asia/Shanghai
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+security:
+  jwt:
+    secret: "d7b1c2a0e4f94c3db2f5a6e8c9d0b1a2f3e4d5c6b7a8c9d0e1f2a3b4c5d6e7f8"
+    issuer: "library-seat"
+    access-token-ttl-seconds: 7200
+
+logging:
+  level:
+    com.example.libraryseat.security: DEBUG
+
+

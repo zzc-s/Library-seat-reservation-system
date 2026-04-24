@@ -1,0 +1,104 @@
+.borrows-page {
+  min-height: calc(100vh - 120px);
+  padding: 32px 16px 48px;
+}
+
+.borrows-container {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.borrows-container h2 {
+  margin: 0 0 24px;
+  font-size: 24px;
+  color: #111827;
+}
+
+.loading,
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6b7280;
+}
+
+.borrows-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.borrow-item {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-left: 4px solid #667eea;
+}
+
+.borrow-item.OVERDUE {
+  border-left-color: #ef4444;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, rgba(255, 255, 255, 0.95) 100%);
+}
+
+.borrow-item.RETURNED {
+  border-left-color: #10b981;
+  opacity: 0.8;
+}
+
+.borrow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.borrow-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #111827;
+}
+
+.borrow-status {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #e5e7eb;
+  color: #6b7280;
+}
+
+.borrow-item.OVERDUE .borrow-status {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.borrow-item.RETURNED .borrow-status {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.borrow-info {
+  color: #4b5563;
+  line-height: 1.8;
+  margin-bottom: 12px;
+}
+
+.borrow-info p {
+  margin: 4px 0;
+}
+
+.overdue {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.return-notice {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #eff6ff;
+  border-left: 3px solid #667eea;
+  border-radius: 4px;
+  color: #1e40af;
+  font-size: 0.875rem;
+}
+
