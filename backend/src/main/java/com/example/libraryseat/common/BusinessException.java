@@ -33,4 +33,8 @@ public class BusinessException extends RuntimeException {
     public static BusinessException notFound(String message) {
         return new BusinessException(HttpStatus.NOT_FOUND, message);
     }
+
+    public static BusinessException internalError(String message) {
+        return new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
 }

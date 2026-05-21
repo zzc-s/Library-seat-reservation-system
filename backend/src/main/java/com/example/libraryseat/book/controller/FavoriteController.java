@@ -5,14 +5,11 @@ import com.example.libraryseat.book.entity.Book;
 import com.example.libraryseat.book.entity.Favorite;
 import com.example.libraryseat.book.mapper.BookMapper;
 import com.example.libraryseat.book.mapper.FavoriteMapper;
-import com.example.libraryseat.user.entity.User;
-import com.example.libraryseat.user.mapper.UserMapper;
+import com.example.libraryseat.common.util.SecurityUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -28,12 +25,12 @@ import java.util.stream.Collectors;
 public class FavoriteController {
     private final FavoriteMapper favoriteMapper;
     private final BookMapper bookMapper;
-    private final UserMapper userMapper;
+    private final SecurityUtil securityUtil;
 
-    public FavoriteController(FavoriteMapper favoriteMapper, BookMapper bookMapper, UserMapper userMapper) {
+    public FavoriteController(FavoriteMapper favoriteMapper, BookMapper bookMapper, SecurityUtil securityUtil) {
         this.favoriteMapper = favoriteMapper;
         this.bookMapper = bookMapper;
-        this.userMapper = userMapper;
+        this.securityUtil = securityUtil;
     }
 
     /**
@@ -42,7 +39,7 @@ public class FavoriteController {
     @Operation(summary = "获取当前用户的收藏列表")
     @GetMapping
     public List<Map<String, Object>> getMyFavorites() {
-        Long userId = currentUserId();
+        Long userId = securityUtil.currentUserId();
         List<Favorite> favorites = favoriteMapper.selectList(
                 new LambdaQueryWrapper<Favorite>()
                         .eq(Favorite::getUserId, userId)
@@ -67,7 +64,7 @@ public class FavoriteController {
     @Operation(summary = "获取当前用户收藏的图书ID列表")
     @GetMapping("/ids")
     public List<Long> getFavoriteBookIds() {
-        Long userId = currentUserId();
+        Long userId = securityUtil.currentUserId();
         List<Favorite> favorites = favoriteMapper.selectList(
                 new LambdaQueryWrapper<Favorite>()
                         .eq(Favorite::getUserId, userId)
@@ -81,7 +78,7 @@ public class FavoriteController {
     @Operation(summary = "添加收藏图书")
     @PostMapping
     public ResponseEntity<?> addFavorite(@RequestBody Map<String, Object> req) {
-        Long userId = currentUserId();
+        Long userId = securityUtil.currentUserId();
         Long bookId = Long.valueOf(req.get("bookId").toString());
 
         // 检查图书是否存在
@@ -116,7 +113,7 @@ public class FavoriteController {
     @Operation(summary = "取消收藏图书")
     @DeleteMapping("/{bookId}")
     public ResponseEntity<?> removeFavorite(@PathVariable Long bookId) {
-        Long userId = currentUserId();
+        Long userId = securityUtil.currentUserId();
 
         // 查找收藏记录
         Favorite favorite = favoriteMapper.selectOne(
@@ -141,7 +138,7 @@ public class FavoriteController {
     @Operation(summary = "检查指定图书是否已收藏")
     @GetMapping("/check/{bookId}")
     public ResponseEntity<?> checkFavorite(@PathVariable Long bookId) {
-        Long userId = currentUserId();
+        Long userId = securityUtil.currentUserId();
         Favorite favorite = favoriteMapper.selectOne(
                 new LambdaQueryWrapper<Favorite>()
                         .eq(Favorite::getUserId, userId)
@@ -149,33 +146,4 @@ public class FavoriteController {
         return ResponseEntity.ok(Map.of("isFavorite", favorite != null));
     }
 
-    /**
-     * 获取当前用户ID
-     */
-    private Long currentUserId() {
-        // 首先尝试从 request attribute 获取（由 JwtAuthFilter 设置）
-        try {
-            Object uid = ((org.springframework.web.context.request.ServletRequestAttributes)
-                    org.springframework.web.context.request.RequestContextHolder.currentRequestAttributes())
-                    .getRequest().getAttribute("uid");
-            if (uid instanceof Number) {
-                return ((Number) uid).longValue();
-            }
-        } catch (Exception e) {
-            log.debug("无法从 request attribute 获取 uid: {}", e.getMessage());
-        }
-        
-        // 如果 request attribute 中没有，从数据库查询
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null) {
-            String username = auth.getName();
-            User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-            if (user != null) {
-                log.debug("从数据库查询到用户ID: {} (用户名: {})", user.getId(), username);
-                return user.getId();
-            }
-        }
-        
-        throw new IllegalStateException("无法获取用户ID，用户: " + (auth != null ? auth.getName() : "unknown"));
-    }
 }

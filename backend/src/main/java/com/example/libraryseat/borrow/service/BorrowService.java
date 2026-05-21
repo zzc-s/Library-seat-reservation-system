@@ -5,13 +5,14 @@ import com.example.libraryseat.book.entity.Book;
 import com.example.libraryseat.book.mapper.BookMapper;
 import com.example.libraryseat.borrow.dto.BorrowRequest;
 import com.example.libraryseat.borrow.dto.BorrowVO;
+import com.example.libraryseat.borrow.dto.WarnOverdueResult;
 import com.example.libraryseat.borrow.entity.Borrow;
 import com.example.libraryseat.borrow.mapper.BorrowMapper;
+import com.example.libraryseat.common.BusinessException;
 import com.example.libraryseat.security.EmailService;
 import com.example.libraryseat.user.entity.User;
 import com.example.libraryseat.user.mapper.UserMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,16 +63,17 @@ public class BorrowService {
         return toBorrowVOs(borrows, true);
     }
 
-    public ResponseEntity<?> borrowBook(BorrowRequest req, Long userId) {
+    @Transactional(rollbackFor = Exception.class)
+    public void borrowBook(BorrowRequest req, Long userId) {
         Book book = bookMapper.selectById(req.bookId());
         if (book == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "图书不存在"));
+            throw new BusinessException("图书不存在");
         }
         if (!book.getIsBorrowable()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "该图书不可借阅"));
+            throw new BusinessException("该图书不可借阅");
         }
         if (book.getStock() == null || book.getStock() <= 0) {
-            return ResponseEntity.badRequest().body(Map.of("message", "该图书库存不足，无法借阅"));
+            throw new BusinessException("该图书库存不足，无法借阅");
         }
 
         boolean alreadyBorrowed = borrowMapper.selectCount(
@@ -80,12 +82,12 @@ public class BorrowService {
                         .eq(Borrow::getUserId, userId)
                         .eq(Borrow::getStatus, "BORROWED")) > 0;
         if (alreadyBorrowed) {
-            return ResponseEntity.badRequest().body(Map.of("message", "您已借阅该图书，尚未归还"));
+            throw new BusinessException("您已借阅该图书，尚未归还");
         }
 
         LocalDateTime dueDate = req.dueDate() != null ? req.dueDate() : LocalDateTime.now().plusDays(30);
         if (!dueDate.isAfter(LocalDateTime.now())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "归还日期必须是未来时间"));
+            throw new BusinessException("归还日期必须是未来时间");
         }
 
         Borrow borrow = new Borrow();
@@ -101,18 +103,16 @@ public class BorrowService {
 
         book.setStock(book.getStock() - 1);
         bookMapper.updateById(book);
-
-        return ResponseEntity.ok(Map.of("message", "借阅成功"));
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public ResponseEntity<?> returnBook(Long id) {
+    public void returnBook(Long id) {
         Borrow borrow = borrowMapper.selectById(id);
         if (borrow == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "借阅记录不存在"));
+            throw new BusinessException("借阅记录不存在");
         }
         if ("RETURNED".equals(borrow.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "该图书已归还"));
+            throw new BusinessException("该图书已归还");
         }
 
         borrow.setReturnDate(LocalDateTime.now());
@@ -125,28 +125,26 @@ public class BorrowService {
             book.setStock((book.getStock() != null ? book.getStock() : 0) + 1);
             bookMapper.updateById(book);
         }
-
-        return ResponseEntity.ok(Map.of("message", "归还成功"));
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public ResponseEntity<?> warnOverdueUser(Long id) {
+    public WarnOverdueResult warnOverdueUser(Long id) {
         Borrow borrow = borrowMapper.selectById(id);
         if (borrow == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "借阅记录不存在"));
+            throw new BusinessException("借阅记录不存在");
         }
         if ("RETURNED".equals(borrow.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "该图书已归还，无需警告"));
+            throw new BusinessException("该图书已归还，无需警告");
         }
 
         LocalDateTime now = LocalDateTime.now();
         if (borrow.getDueDate() == null || !borrow.getDueDate().isBefore(now)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "该借阅尚未逾期，无需警告"));
+            throw new BusinessException("该借阅尚未逾期，无需警告");
         }
 
         User user = userMapper.selectById(borrow.getUserId());
         if (user == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "用户不存在"));
+            throw new BusinessException("用户不存在");
         }
 
         int warningCount = (borrow.getWarningCount() != null ? borrow.getWarningCount() : 0) + 1;
@@ -161,19 +159,15 @@ public class BorrowService {
         if (warningCount >= 3) {
             user.setIsFrozen(true);
             userMapper.updateById(user);
-            return ResponseEntity.ok(Map.of(
-                    "message", String.format("已发送第%d次警告，账号已自动冻结", warningCount),
-                    "warningCount", warningCount,
-                    "accountFrozen", true));
+            return new WarnOverdueResult(
+                    String.format("已发送第%d次警告，账号已自动冻结", warningCount),
+                    warningCount, true);
         }
 
-        return ResponseEntity.ok(Map.of(
-                "message", String.format("已发送第%d次警告", warningCount),
-                "warningCount", warningCount,
-                "accountFrozen", false));
+        return new WarnOverdueResult(
+                String.format("已发送第%d次警告", warningCount),
+                warningCount, false);
     }
-
-    // ---- private helpers ----
 
     private void autoUpdateOverdue(List<Borrow> borrows) {
         LocalDateTime now = LocalDateTime.now();

@@ -10,7 +10,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import com.example.libraryseat.borrow.dto.WarnOverdueResult;
+
 import java.util.List;
+import java.util.Map;
 
 @Tag(name = "图书借阅与逾期管理接口", description = "用户借阅、管理员归还与逾期警告")
 @RestController
@@ -33,15 +36,17 @@ public class BorrowController {
 
     @Operation(summary = "借阅图书")
     @PostMapping
-    public ResponseEntity<?> borrowBook(@RequestBody BorrowRequest req) {
-        return borrowService.borrowBook(req, securityUtil.currentUserId());
+    public ResponseEntity<Map<String, String>> borrowBook(@RequestBody BorrowRequest req) {
+        borrowService.borrowBook(req, securityUtil.currentUserId());
+        return ResponseEntity.ok(Map.of("message", "借阅成功"));
     }
 
     @Operation(summary = "归还图书（管理员）")
     @PostMapping("/{id}/return")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> returnBook(@PathVariable Long id) {
-        return borrowService.returnBook(id);
+    public ResponseEntity<Map<String, String>> returnBook(@PathVariable Long id) {
+        borrowService.returnBook(id);
+        return ResponseEntity.ok(Map.of("message", "归还成功"));
     }
 
     @Operation(summary = "获取所有借阅记录（管理员）")
@@ -54,7 +59,7 @@ public class BorrowController {
     @Operation(summary = "对逾期借阅发送警告（管理员）")
     @PostMapping("/{id}/warn")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> warnOverdueUser(@PathVariable Long id) {
-        return borrowService.warnOverdueUser(id);
+    public ResponseEntity<WarnOverdueResult> warnOverdueUser(@PathVariable Long id) {
+        return ResponseEntity.ok(borrowService.warnOverdueUser(id));
     }
 }

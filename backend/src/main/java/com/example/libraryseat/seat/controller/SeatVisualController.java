@@ -1,24 +1,20 @@
 package com.example.libraryseat.seat.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.libraryseat.common.util.SecurityUtil;
+import com.example.libraryseat.reservation.dto.CreateReservationRequest;
 import com.example.libraryseat.reservation.entity.Reservation;
 import com.example.libraryseat.reservation.mapper.ReservationMapper;
-import com.example.libraryseat.reservation.service.PersonalReservationOverlapService;
+import com.example.libraryseat.reservation.service.ReservationService;
 import com.example.libraryseat.seat.entity.Seat;
 import com.example.libraryseat.seat.mapper.SeatMapper;
-import com.example.libraryseat.user.entity.User;
-import com.example.libraryseat.user.mapper.UserMapper;
 import com.example.libraryseat.websocket.SeatStatusWebSocketHandler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -35,30 +31,19 @@ public class SeatVisualController {
     
     private final SeatMapper seatMapper;
     private final ReservationMapper reservationMapper;
-    private final UserMapper userMapper;
     private final SeatStatusWebSocketHandler webSocketHandler;
-    private final PersonalReservationOverlapService personalReservationOverlapService;
+    private final ReservationService reservationService;
+    private final SecurityUtil securityUtil;
     
-    public SeatVisualController(SeatMapper seatMapper, ReservationMapper reservationMapper, 
-                                UserMapper userMapper, SeatStatusWebSocketHandler webSocketHandler,
-                                PersonalReservationOverlapService personalReservationOverlapService) {
+    public SeatVisualController(SeatMapper seatMapper, ReservationMapper reservationMapper,
+                                SeatStatusWebSocketHandler webSocketHandler,
+                                ReservationService reservationService,
+                                SecurityUtil securityUtil) {
         this.seatMapper = seatMapper;
         this.reservationMapper = reservationMapper;
-        this.userMapper = userMapper;
         this.webSocketHandler = webSocketHandler;
-        this.personalReservationOverlapService = personalReservationOverlapService;
-    }
-    //获取当前用户ID
-    private Long currentUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null) {
-            String username = auth.getName();
-            User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-            if (user != null) {
-                return user.getId();
-            }
-        }
-        throw new IllegalStateException("无法获取当前用户ID");
+        this.reservationService = reservationService;
+        this.securityUtil = securityUtil;
     }
     
     /**
@@ -212,112 +197,22 @@ public class SeatVisualController {
      */
     @Operation(summary = "在可视化平面图上一键预约座位")
     @PostMapping("/reserve")
-    @Transactional
-    public ResponseEntity<?> reserve(@RequestBody Map<String, Object> req) {
-        Long userId = currentUserId();
+    public ResponseEntity<Map<String, Object>> reserve(@RequestBody Map<String, Object> req) {
+        Long userId = securityUtil.currentUserId();
         log.info("收到座位预约请求: userId={}, req={}", userId, req);
-        
-        // 检查用户是否在黑名单中
-        User user = userMapper.selectById(userId);
-        if (user != null && Boolean.TRUE.equals(user.getIsBlacklisted())) {
-            log.warn("用户 {} 在黑名单中，拒绝可视化选座预约请求", userId);
-            return ResponseEntity.status(403).body(Map.of("message", "您的账号已被加入黑名单，无法预约座位。如有疑问，请联系管理员。"));
-        }
-        //解析并验证时间
-        try {
-            Long seatId = Long.valueOf(req.get("seatId").toString());
-            String reserveDate = (String) req.get("reserveDate");
-            String startTimeStr = (String) req.get("startTime");
-            String endTimeStr = (String) req.get("endTime");
-            
-            // 解析时间
-            LocalDateTime startTime = LocalDateTime.parse(startTimeStr);
-            LocalDateTime endTime = LocalDateTime.parse(endTimeStr);
-            
-            // 验证时间
-            LocalDateTime now = LocalDateTime.now();
-            //验证1：开始时间必须是未来
-            if (!startTime.isAfter(now)) {
-                return ResponseEntity.badRequest().body(Map.of("message", "开始时间必须是未来时间"));
-            }
-            //验证2：结束时间晚于开始时间
-            if (!endTime.isAfter(startTime)) {
-                return ResponseEntity.badRequest().body(Map.of("message", "结束时间需晚于开始时间"));
-            }
-            //验证3：时长不超过4小时
-            if (Duration.between(startTime, endTime).toHours() > 4) {
-                return ResponseEntity.badRequest().body(Map.of("message", "单次预约不超过4小时"));
-            }
-            //个人时间冲突检测
-            if (personalReservationOverlapService.hasUserTimeOverlap(userId, startTime, endTime, null)) {
-                return ResponseEntity.status(409).body(Map.of("message", "该时间段您已有预约，不能同时占用多个座位"));
-            }
-            
-            // 验证时间限制：禁止凌晨0点到早上6点之间的预约
-            int startHour = startTime.getHour();
-            int endHour = endTime.getHour();
-            
-            // 检查开始时间是否在禁止时段（0:00-6:00）
-            if (startHour >= 0 && startHour < 6) {
-                return ResponseEntity.badRequest().body(Map.of("message", "凌晨0点到早上6点之间不能预约座位"));
-            }
-            
-            // 检查结束时间是否超过23:59
-            if (endHour > 23 || (endHour == 23 && endTime.getMinute() > 59)) {
-                return ResponseEntity.badRequest().body(Map.of("message", "预约结束时间不能超过晚上12点（24:00）"));
-            }
-            
-            // 如果结束时间跨越了0点，检查是否在禁止时段
-            if (endTime.toLocalDate().isAfter(startTime.toLocalDate())) {
-                // 跨日期的预约，检查结束时间是否在禁止时段
-                if (endHour >= 0 && endHour < 6) {
-                    return ResponseEntity.badRequest().body(Map.of("message", "预约结束时间不能超过晚上12点（24:00）"));
-                }
-            }
-            
-            // 检查座位是否存在
-            Seat seat = seatMapper.selectById(seatId);
-            if (seat == null) {
-                return ResponseEntity.badRequest().body(Map.of("message", "座位不存在"));
-            }
-            
-            // 双重检查：检查该时段是否已有预约（防止并发）
-            long conflictCount = reservationMapper.selectCount(new LambdaQueryWrapper<Reservation>()
-                    .eq(Reservation::getSeatId, seatId)
-                    .in(Reservation::getStatus, List.of("ACTIVE", "CONFIRMED", "PENDING"))
-                    .gt(Reservation::getEndTime, startTime)
-                    .lt(Reservation::getStartTime, endTime));
-            
-            if (conflictCount > 0) {
-                log.warn("座位 {} 在时间段 {}-{} 已被预约", seatId, startTime, endTime);
-                return ResponseEntity.badRequest().body(Map.of("message", "该座位已被预约，请选择其他座位"));
-            }
-            
-            // 创建预约记录
-            Reservation reservation = new Reservation();
-            reservation.setUserId(userId);
-            reservation.setSeatId(seatId);
-            reservation.setStartTime(startTime);
-            reservation.setEndTime(endTime);
-            reservation.setStatus("ACTIVE"); // 预约直接生效，无需管理员批准
-            reservation.setCreatedAt(LocalDateTime.now());
-            
-            reservationMapper.insert(reservation);
-            
-            log.info("预约成功: reservationId={}, seatId={}, userId={}, time={}-{}", 
-                    reservation.getId(), seatId, userId, startTime, endTime);
-            
-            // 通过 WebSocket 推送座位状态变更（状态1-已预约）
-            webSocketHandler.broadcastSeatStatusUpdate(seatId, 1, "RESERVED");
-            
-            return ResponseEntity.ok(Map.of(
-                    "message", "预约成功",
-                    "reservationId", reservation.getId()
-            ));
-            
-        } catch (Exception e) {
-            log.error("预约失败", e);
-            return ResponseEntity.badRequest().body(Map.of("message", "预约失败：" + e.getMessage()));
-        }
+
+        Long seatId = Long.valueOf(req.get("seatId").toString());
+        LocalDateTime startTime = LocalDateTime.parse((String) req.get("startTime"));
+        LocalDateTime endTime = LocalDateTime.parse((String) req.get("endTime"));
+
+        Reservation reservation = reservationService.create(
+                new CreateReservationRequest(seatId, startTime, endTime), userId);
+
+        webSocketHandler.broadcastSeatStatusUpdate(seatId, 1, "RESERVED");
+
+        return ResponseEntity.ok(Map.of(
+                "message", "预约成功",
+                "reservationId", reservation.getId()
+        ));
     }
 }

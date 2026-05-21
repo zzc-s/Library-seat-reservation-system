@@ -5,14 +5,11 @@ import com.example.libraryseat.book.entity.Book;
 import com.example.libraryseat.book.entity.Subscription;
 import com.example.libraryseat.book.mapper.BookMapper;
 import com.example.libraryseat.book.mapper.SubscriptionMapper;
-import com.example.libraryseat.user.entity.User;
-import com.example.libraryseat.user.mapper.UserMapper;
+import com.example.libraryseat.common.util.SecurityUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -28,12 +25,12 @@ import java.util.stream.Collectors;
 public class SubscriptionController {
     private final SubscriptionMapper subscriptionMapper;
     private final BookMapper bookMapper;
-    private final UserMapper userMapper;
+    private final SecurityUtil securityUtil;
 
-    public SubscriptionController(SubscriptionMapper subscriptionMapper, BookMapper bookMapper, UserMapper userMapper) {
+    public SubscriptionController(SubscriptionMapper subscriptionMapper, BookMapper bookMapper, SecurityUtil securityUtil) {
         this.subscriptionMapper = subscriptionMapper;
         this.bookMapper = bookMapper;
-        this.userMapper = userMapper;
+        this.securityUtil = securityUtil;
     }
 
     /**
@@ -42,7 +39,7 @@ public class SubscriptionController {
     @Operation(summary = "获取当前用户的订阅列表")
     @GetMapping
     public List<Map<String, Object>> getMySubscriptions() {
-        Long userId = currentUserId();
+        Long userId = securityUtil.currentUserId();
         List<Subscription> subscriptions = subscriptionMapper.selectList(
                 new LambdaQueryWrapper<Subscription>()
                         .eq(Subscription::getUserId, userId)
@@ -67,7 +64,7 @@ public class SubscriptionController {
     @Operation(summary = "获取当前用户订阅的图书ID列表")
     @GetMapping("/ids")
     public List<Long> getSubscriptionBookIds() {
-        Long userId = currentUserId();
+        Long userId = securityUtil.currentUserId();
         List<Subscription> subscriptions = subscriptionMapper.selectList(
                 new LambdaQueryWrapper<Subscription>()
                         .eq(Subscription::getUserId, userId)
@@ -81,7 +78,7 @@ public class SubscriptionController {
     @Operation(summary = "订阅未上架图书")
     @PostMapping
     public ResponseEntity<?> addSubscription(@RequestBody Map<String, Object> req) {
-        Long userId = currentUserId();
+        Long userId = securityUtil.currentUserId();
         Long bookId = Long.valueOf(req.get("bookId").toString());
 
         // 检查图书是否存在
@@ -121,7 +118,7 @@ public class SubscriptionController {
     @Operation(summary = "取消订阅")
     @DeleteMapping("/{bookId}")
     public ResponseEntity<?> removeSubscription(@PathVariable Long bookId) {
-        Long userId = currentUserId();
+        Long userId = securityUtil.currentUserId();
 
         // 查找订阅记录
         Subscription subscription = subscriptionMapper.selectOne(
@@ -140,31 +137,4 @@ public class SubscriptionController {
         return ResponseEntity.ok(Map.of("message", "取消订阅成功"));
     }
 
-    /**
-     * 获取当前用户ID
-     */
-    private Long currentUserId() {
-        try {
-            Object uid = ((org.springframework.web.context.request.ServletRequestAttributes)
-                    org.springframework.web.context.request.RequestContextHolder.currentRequestAttributes())
-                    .getRequest().getAttribute("uid");
-            if (uid instanceof Number) {
-                return ((Number) uid).longValue();
-            }
-        } catch (Exception e) {
-            log.debug("无法从 request attribute 获取 uid: {}", e.getMessage());
-        }
-        
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null) {
-            String username = auth.getName();
-            User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-            if (user != null) {
-                log.debug("从数据库查询到用户ID: {} (用户名: {})", user.getId(), username);
-                return user.getId();
-            }
-        }
-        
-        throw new IllegalStateException("无法获取用户ID，用户: " + (auth != null ? auth.getName() : "unknown"));
-    }
 }

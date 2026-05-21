@@ -1,0 +1,90 @@
+# 配置示例（可安全提交到 GitHub）
+# 使用方式见 backend/CONFIG.md
+
+server:
+  port: 8081
+
+swagger:
+  url:
+    print-delay-ms: 2000
+
+spring:
+  application:
+    name: library-seat-backend
+  profiles:
+    active: mysql
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: ${MAIL_USERNAME:your@qq.com}
+    password: ${MAIL_PASSWORD:your-app-password}
+    from: ${MAIL_FROM:your@qq.com}
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+            port: 465
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  health:
+    redis:
+      enabled: false
+    mail:
+      enabled: false
+
+---
+spring:
+  config:
+    activate:
+      on-profile: mysql
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:library_seat}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 300000
+  jackson:
+    time-zone: Asia/Shanghai
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:change-me-to-at-least-32-bytes-secret}
+    issuer: library-seat
+    access-token-ttl-seconds: 7200
+
+logging:
+  level:
+    com.example.libraryseat.security: INFO

@@ -2,6 +2,7 @@ package com.example.libraryseat.feedback.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.example.libraryseat.common.BusinessException;
 import com.example.libraryseat.feedback.dto.FeedbackRequest;
 import com.example.libraryseat.feedback.dto.FeedbackVO;
 import com.example.libraryseat.feedback.entity.Feedback;
@@ -12,7 +13,6 @@ import com.example.libraryseat.user.entity.User;
 import com.example.libraryseat.user.mapper.UserMapper;
 import com.example.libraryseat.websocket.FeedbackWebSocketHandler;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -50,7 +50,7 @@ public class FeedbackService {
         return toFeedbackVOs(feedbacks);
     }
 
-    public ResponseEntity<?> createFeedback(FeedbackRequest req, Long userId) {
+    public void createFeedback(FeedbackRequest req, Long userId) {
         Feedback feedback = new Feedback();
         feedback.setUserId(userId);
         feedback.setContent(req.content());
@@ -71,8 +71,6 @@ public class FeedbackService {
         } catch (Exception e) {
             log.warn("写入管理员站内通知失败: {}", e.getMessage());
         }
-
-        return ResponseEntity.ok(Map.of("message", "反馈提交成功"));
     }
 
     public List<FeedbackVO> getPublicFeedbacks(Long currentUserId) {
@@ -94,13 +92,13 @@ public class FeedbackService {
         return toFeedbackVOs(feedbacks);
     }
 
-    public ResponseEntity<?> replyFeedback(Long id, String adminReply) {
+    public void replyFeedback(Long id, String adminReply) {
         Feedback feedback = feedbackMapper.selectById(id);
         if (feedback == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "反馈不存在"));
+            throw BusinessException.notFound("反馈不存在");
         }
         if (adminReply == null || adminReply.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "回复内容不能为空"));
+            throw new BusinessException("回复内容不能为空");
         }
 
         String previousReply = feedback.getAdminReply() != null ? feedback.getAdminReply().trim() : "";
@@ -114,7 +112,7 @@ public class FeedbackService {
                 .set(Feedback::getUpdatedAt, LocalDateTime.now());
         int updated = feedbackMapper.update(null, uw);
         if (updated == 0) {
-            return ResponseEntity.status(500).body(Map.of("message", "更新反馈失败"));
+            throw BusinessException.internalError("更新反馈失败");
         }
 
         feedback.setStatus("PROCESSED");
@@ -129,35 +127,33 @@ public class FeedbackService {
         }
 
         sendReplyNotificationsAsync(id, newReply, feedback.getUserId(), feedback.getContent());
-        return ResponseEntity.ok(Map.of("message", "回复成功", "success", true));
     }
 
-    public ResponseEntity<?> closeFeedback(Long id) {
+    public void closeFeedback(Long id) {
         Feedback feedback = feedbackMapper.selectById(id);
         if (feedback == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "反馈不存在"));
+            throw BusinessException.notFound("反馈不存在");
         }
         feedback.setStatus("CLOSED");
         feedback.setUpdatedAt(LocalDateTime.now());
         feedbackMapper.updateById(feedback);
         feedbackWebSocketHandler.broadcastFeedbackStatusUpdate(id, "CLOSED");
-        return ResponseEntity.ok(Map.of("message", "反馈已关闭"));
     }
 
-    public ResponseEntity<?> userReply(Long id, String userReply, Long userId) {
+    public void userReply(Long id, String userReply, Long userId) {
         Feedback feedback = feedbackMapper.selectById(id);
         if (feedback == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "反馈不存在"));
+            throw BusinessException.notFound("反馈不存在");
         }
         if (!feedback.getUserId().equals(userId)) {
-            return ResponseEntity.status(403).body(Map.of("message", "只能回复自己的反馈"));
+            throw BusinessException.forbidden("只能回复自己的反馈");
         }
         if ((feedback.getUserReply() == null || feedback.getUserReply().trim().isEmpty())
                 && (feedback.getAdminReply() == null || feedback.getAdminReply().trim().isEmpty())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "管理员尚未回复，无法回复"));
+            throw new BusinessException("管理员尚未回复，无法回复");
         }
         if (userReply == null || userReply.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "回复内容不能为空"));
+            throw new BusinessException("回复内容不能为空");
         }
 
         String newUserReply = (feedback.getUserReply() != null && !feedback.getUserReply().trim().isEmpty())
@@ -183,23 +179,18 @@ public class FeedbackService {
         } catch (Exception e) {
             log.warn("写入管理员站内通知失败: {}", e.getMessage());
         }
-
-        return ResponseEntity.ok(Map.of("message", "回复成功"));
     }
 
-    public ResponseEntity<?> deleteFeedback(Long id, Long userId) {
+    public void deleteFeedback(Long id, Long userId) {
         Feedback feedback = feedbackMapper.selectById(id);
         if (feedback == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "反馈不存在"));
+            throw BusinessException.notFound("反馈不存在");
         }
         if (!feedback.getUserId().equals(userId)) {
-            return ResponseEntity.status(403).body(Map.of("message", "只能删除自己的反馈"));
+            throw BusinessException.forbidden("只能删除自己的反馈");
         }
         feedbackMapper.deleteById(id);
-        return ResponseEntity.ok(Map.of("message", "反馈已删除"));
     }
-
-    // ---- private helpers ----
 
     private List<FeedbackVO> toFeedbackVOs(List<Feedback> feedbacks) {
         Set<Long> userIds = feedbacks.stream().map(Feedback::getUserId).collect(Collectors.toSet());

@@ -185,6 +185,21 @@ public class ReservationService {
         if (Duration.between(startTime, endTime).toHours() > 4) {
             throw new BusinessException("单次预约不超过4小时");
         }
+        validateQuietHours(startTime, endTime);
+    }
+
+    private void validateQuietHours(LocalDateTime startTime, LocalDateTime endTime) {
+        int startHour = startTime.getHour();
+        if (startHour >= 0 && startHour < 6) {
+            throw new BusinessException("凌晨0点到早上6点之间不能预约座位");
+        }
+        int endHour = endTime.getHour();
+        if (endHour > 23 || (endHour == 23 && endTime.getMinute() > 59)) {
+            throw new BusinessException("预约结束时间不能超过晚上12点（24:00）");
+        }
+        if (endTime.toLocalDate().isAfter(startTime.toLocalDate()) && endHour >= 0 && endHour < 6) {
+            throw new BusinessException("预约结束时间不能超过晚上12点（24:00）");
+        }
     }
 
     private boolean isEffectiveStatus(String status) {

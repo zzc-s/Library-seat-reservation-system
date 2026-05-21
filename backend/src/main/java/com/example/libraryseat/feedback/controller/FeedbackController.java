@@ -34,8 +34,9 @@ public class FeedbackController {
 
     @Operation(summary = "提交反馈")
     @PostMapping
-    public ResponseEntity<?> createFeedback(@RequestBody FeedbackRequest req) {
-        return feedbackService.createFeedback(req, securityUtil.currentUserId());
+    public ResponseEntity<Map<String, String>> createFeedback(@RequestBody FeedbackRequest req) {
+        feedbackService.createFeedback(req, securityUtil.currentUserId());
+        return ResponseEntity.ok(Map.of("message", "反馈提交成功"));
     }
 
     @Operation(summary = "获取公开反馈列表")
@@ -59,26 +60,30 @@ public class FeedbackController {
     @Operation(summary = "管理员回复反馈")
     @PutMapping("/{id}/reply")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> replyFeedback(@PathVariable Long id, @RequestBody Map<String, Object> req) {
-        return feedbackService.replyFeedback(id, (String) req.get("adminReply"));
+    public ResponseEntity<Map<String, Object>> replyFeedback(@PathVariable Long id, @RequestBody Map<String, Object> req) {
+        feedbackService.replyFeedback(id, (String) req.get("adminReply"));
+        return ResponseEntity.ok(Map.of("message", "回复成功", "success", true));
     }
 
     @Operation(summary = "关闭反馈（管理员）")
     @PutMapping("/{id}/close")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> closeFeedback(@PathVariable Long id) {
-        return feedbackService.closeFeedback(id);
+    public ResponseEntity<Map<String, String>> closeFeedback(@PathVariable Long id) {
+        feedbackService.closeFeedback(id);
+        return ResponseEntity.ok(Map.of("message", "反馈已关闭"));
     }
 
     @Operation(summary = "用户补充回复")
     @PutMapping("/{id}/user-reply")
-    public ResponseEntity<?> userReply(@PathVariable Long id, @RequestBody Map<String, Object> req) {
-        return feedbackService.userReply(id, (String) req.get("userReply"), securityUtil.currentUserId());
+    public ResponseEntity<Map<String, String>> userReply(@PathVariable Long id, @RequestBody Map<String, Object> req) {
+        feedbackService.userReply(id, (String) req.get("userReply"), securityUtil.currentUserId());
+        return ResponseEntity.ok(Map.of("message", "回复成功"));
     }
 
     @Operation(summary = "删除自己的反馈")
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteFeedback(@PathVariable Long id) {
-        return feedbackService.deleteFeedback(id, securityUtil.currentUserId());
+    public ResponseEntity<Map<String, String>> deleteFeedback(@PathVariable Long id) {
+        feedbackService.deleteFeedback(id, securityUtil.currentUserId());
+        return ResponseEntity.ok(Map.of("message", "反馈已删除"));
     }
 }
