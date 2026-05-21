@@ -104,7 +104,7 @@
 mvn -f backend/pom.xml spring-boot:run
 ```
 
-默认端口：`8080`（以 `application.yml` 实际配置为准）
+默认端口：`8081`（以 `application.yml` 实际配置为准）
 
 ### 7.3 前端启动
 
@@ -119,14 +119,19 @@ npm run dev
 
 ## 8. 关键配置说明
 
-配置文件路径：`backend/src/main/resources/application.yml`
+- **示例配置（可提交 GitHub）**：[`backend/src/main/resources/application-example.yml`](backend/src/main/resources/application-example.yml)
+- **详细说明**：[`backend/CONFIG.md`](backend/CONFIG.md)
 
-请根据本机环境至少完成以下配置：
+克隆项目后，复制示例为 `application-local.yml` 并填入本机环境，启动时通过 `--spring.config.additional-location=classpath:application-local.yml` 加载（无需修改仓库内的 `application.yml`）。
+
+请至少配置：
 
 - MySQL 连接（URL、用户名、密码）
-- Redis 连接（Host、Port、密码）
-- JWT 密钥（建议使用高强度随机串）
+- Redis 连接（Host、Port）
+- JWT 密钥（建议使用高强度随机串，≥ 32 字节）
 - 邮件 SMTP（用于验证码与提醒邮件）
+
+> **安全提示**：若历史提交中曾包含真实邮箱授权码或数据库密码，上传公开仓库前请轮换密钥，详见 `backend/CONFIG.md`。
 
 ## 9. 主要接口分组
 

@@ -2,8 +2,6 @@ package com.example.libraryseat.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,13 +32,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         this.properties = properties;
         this.redisTokenService = redisTokenService;
         this.userDetailsService = userDetailsService;
-        Key key;
-        try {
-            key = Keys.hmacShaKeyFor(Decoders.BASE64.decode(properties.getSecret()));
-        } catch (IllegalArgumentException e) {
-            key = Keys.hmacShaKeyFor(properties.getSecret().getBytes());
-        }
-        this.signingKey = key;
+        this.signingKey = JwtSigningKeyFactory.fromSecret(properties.getSecret());
     }
 
     @Override
