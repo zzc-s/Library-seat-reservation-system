@@ -10,15 +10,15 @@ export default defineConfig({
     //第10-14行：配置开发服务器代理规则
     proxy: {
       '/api': {//匹配所有以 /api 开头的请求
-        target: 'http://localhost:8080',//转发到后端地址 http://localhost:8080
+        target: 'http://localhost:8081',//转发到后端地址 http://localhost:8081
         changeOrigin: true,//修改请求头的Origin字段，避免跨域问题
       },
       '/uploads': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8081',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:8080',
+        target: 'ws://localhost:8081',
         ws: true,
         changeOrigin: true,
       },

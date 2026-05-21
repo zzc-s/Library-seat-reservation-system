@@ -2,8 +2,6 @@ package com.example.libraryseat.security;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
 import org.springframework.stereotype.Service;
 
 import java.security.Key;
@@ -19,13 +17,7 @@ public class JwtService {
 
     public JwtService(JwtProperties properties) {
         this.properties = properties;
-        // secret may be plain text; accept both raw and base64
-        try {
-            byte[] keyBytes = Decoders.BASE64.decode(properties.getSecret());
-            this.signingKey = Keys.hmacShaKeyFor(keyBytes);
-        } catch (IllegalArgumentException e) {
-            this.signingKey = Keys.hmacShaKeyFor(properties.getSecret().getBytes());
-        }
+        this.signingKey = JwtSigningKeyFactory.fromSecret(properties.getSecret());
     }
 
     public String generateToken(String subject, Map<String, Object> claims) {
