@@ -134,7 +134,7 @@ function formatDateTime(dateTime: string | null | undefined): string {
 // 根据书名生成图书封面URL
 function getBookCoverUrl(book: any): string {
   if (!book || !book.title) return ''
-  const baseUrl = 'http://localhost:8081/uploads/book-covers'
+  const baseUrl = '/uploads/book-covers'
   let filename = book.title.replace(/·/g, '.').trim()
   if (filename === '围城') {
     filename = '微成'
@@ -159,7 +159,7 @@ function handleImageError(event: Event, book: any) {
   const titleKey = book.title.replace(/·/g, '.').trim()
   let currentSrc = img.src
   
-  const baseUrl = 'http://localhost:8081/uploads/book-covers'
+  const baseUrl = '/uploads/book-covers'
   let filename = book.title.replace(/·/g, '.').trim()
   if (filename === '围城') {
     filename = '微成'

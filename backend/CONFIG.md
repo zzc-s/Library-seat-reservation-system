@@ -37,6 +37,9 @@
 | `REDIS_HOST` / `REDIS_PORT` | Redis |
 | `MAIL_USERNAME` / `MAIL_PASSWORD` / `MAIL_FROM` | QQ 邮箱 SMTP |
 | `JWT_SECRET` | JWT 签名密钥（HS256 建议 ≥ 32 字节） |
+| `APP_FRONTEND_BASE_URL` / `FRONTEND_BASE_URL` | 生产环境前端公网地址（Docker 部署签到二维码用） |
+
+Docker 部署详见 [deploy/README.md](../deploy/README.md)。
 
 ## 上传 GitHub 前的安全提醒
 

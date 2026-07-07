@@ -17,8 +17,9 @@ import com.example.libraryseat.attendance.service.QrCodeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.http.ResponseEntity;
+import com.example.libraryseat.common.BusinessException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -45,6 +46,9 @@ public class AttendanceController {
     private final SeatStatusService seatStatusService;
     private final QrCodeService qrCodeService;
 
+    @Value("${app.frontend-base-url:}")
+    private String configuredFrontendBaseUrl;
+
     public AttendanceController(AttendanceLogMapper attendanceLogMapper, ReservationMapper reservationMapper, AttendanceService attendanceService, UserMapper userMapper, SeatBookLinkMapper seatBookLinkMapper, StringRedisTemplate redis, ViolationMapper violationMapper, SeatStatusService seatStatusService, QrCodeService qrCodeService) {
         this.attendanceLogMapper = attendanceLogMapper;
         this.reservationMapper = reservationMapper;
@@ -63,33 +67,33 @@ public class AttendanceController {
      * 如果检测到localhost，会自动替换为局域网IP，以便手机访问
      */
     private String getFrontendBaseUrl(HttpServletRequest request) {
+        if (configuredFrontendBaseUrl != null && !configuredFrontendBaseUrl.isBlank()) {
+            return configuredFrontendBaseUrl.replaceAll("/$", "");
+        }
+
         String baseUrl = null;
-        int port = 5173; // 默认前端端口
-        
-        // 尝试从请求头获取前端URL
+        int port = -1;
+
         String origin = request.getHeader("Origin");
         String referer = request.getHeader("Referer");
-        
+
         if (origin != null && !origin.isEmpty()) {
             baseUrl = origin;
         } else if (referer != null && !referer.isEmpty()) {
             try {
                 java.net.URL url = new java.net.URL(referer);
                 baseUrl = url.getProtocol() + "://" + url.getHost();
-                if (url.getPort() != -1) {
-                    port = url.getPort();
-                }
+                port = url.getPort();
             } catch (Exception e) {
                 log.warn("解析Referer失败: {}", referer, e);
             }
         }
-        
-        // 如果没有获取到URL，使用默认值
+
         if (baseUrl == null || baseUrl.isEmpty()) {
             baseUrl = "http://localhost";
+            port = 5173;
         }
 
-        // 如果URL包含localhost或127.0.0.1，替换为局域网IP
         if (baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1")) {
             String localIp = getLocalNetworkIp();
             if (localIp != null && !localIp.isEmpty()) {
@@ -98,8 +102,17 @@ public class AttendanceController {
             } else {
                 log.warn("无法获取局域网IP，二维码可能无法在手机上访问。请确保手机和电脑在同一网络，或手动配置前端URL");
             }
+            if (port == -1) {
+                port = 5173;
+            }
         }
-        
+
+        if (port == -1) {
+            return baseUrl;
+        }
+        if (port == 80 || port == 443) {
+            return baseUrl;
+        }
         return baseUrl + ":" + port;
     }
     
@@ -154,7 +167,7 @@ public class AttendanceController {
      */
     @Operation(summary = "扫码或按预约ID签到")
     @PostMapping("/checkin")
-    public ResponseEntity<?> checkIn(@RequestBody Map<String, Object> req) {
+    public Map<String, Object> checkIn(@RequestBody Map<String, Object> req) {
         Long reservationId = null;
         
         // 支持固定座位二维码扫码
@@ -171,25 +184,25 @@ public class AttendanceController {
                         // 检查是否有已取消的预约，给出更明确的错误提示
                         String errorMessage = checkCancelledReservation(seatId);
                         if (errorMessage != null) {
-                            return ResponseEntity.badRequest().body(Map.of("message", errorMessage));
+                            throw new BusinessException(errorMessage);
                         }
-                        return ResponseEntity.badRequest().body(Map.of(
-                                "message", "未找到该座位的有效预约，请确认您已预约此座位且预约时间已到"
-                        ));
+                        throw new BusinessException(
+                                "未找到该座位的有效预约，请确认您已预约此座位且预约时间已到"
+                        );
                     }
                 } else if ("checkin".equals(qrData.get("type"))) {
                     // 兼容旧格式的预约二维码
                     reservationId = (Long) qrData.get("reservationId");
                 } else {
-                    return ResponseEntity.badRequest().body(Map.of("message", "二维码类型错误，请扫描座位上的二维码"));
+                    throw new BusinessException("二维码类型错误，请扫描座位上的二维码");
                 }
             } catch (Exception e) {
-                return ResponseEntity.badRequest().body(Map.of("message", "二维码解析失败: " + e.getMessage()));
+                throw new BusinessException("二维码解析失败: " + e.getMessage());
             }
         } else if (req.containsKey("reservationId")) {
             reservationId = Long.valueOf(req.get("reservationId").toString());
         } else {
-            return ResponseEntity.badRequest().body(Map.of("message", "请提供预约ID或二维码内容"));
+            throw new BusinessException("请提供预约ID或二维码内容");
         }
         
         String note = req.containsKey("note") ? (String) req.get("note") : "扫码签到";
@@ -204,7 +217,7 @@ public class AttendanceController {
      */
     @Operation(summary = "扫码或按预约ID签退")
     @PostMapping("/checkout")
-    public ResponseEntity<?> checkOut(@RequestBody Map<String, Object> req) {
+    public Map<String, Object> checkOut(@RequestBody Map<String, Object> req) {
         Long reservationId = null;
         
         // 支持固定座位二维码扫码
@@ -218,23 +231,23 @@ public class AttendanceController {
                     reservationId = findActiveReservationBySeatAndUser(seatId);
                     
                     if (reservationId == null) {
-                        return ResponseEntity.badRequest().body(Map.of(
-                                "message", "未找到该座位的有效预约，请确认您已预约此座位"
-                        ));
+                        throw new BusinessException(
+                                "未找到该座位的有效预约，请确认您已预约此座位"
+                        );
                     }
                 } else if ("checkin".equals(qrData.get("type"))) {
                     // 兼容旧格式的预约二维码
                     reservationId = (Long) qrData.get("reservationId");
                 } else {
-                    return ResponseEntity.badRequest().body(Map.of("message", "二维码类型错误，请扫描座位上的二维码"));
+                    throw new BusinessException("二维码类型错误，请扫描座位上的二维码");
                 }
             } catch (Exception e) {
-                return ResponseEntity.badRequest().body(Map.of("message", "二维码解析失败: " + e.getMessage()));
+                throw new BusinessException("二维码解析失败: " + e.getMessage());
             }
         } else if (req.containsKey("reservationId")) {
             reservationId = Long.valueOf(req.get("reservationId").toString());
         } else {
-            return ResponseEntity.badRequest().body(Map.of("message", "请提供预约ID或二维码内容"));
+            throw new BusinessException("请提供预约ID或二维码内容");
         }
         
         String note = req.containsKey("note") ? (String) req.get("note") : "扫码签退";
@@ -329,32 +342,32 @@ public class AttendanceController {
      */
     @Operation(summary = "生成预约签到二维码")
     @GetMapping("/reservation/{reservationId}/qrcode")
-    public ResponseEntity<?> getReservationQrCode(@PathVariable Long reservationId, HttpServletRequest request) {
+    public Map<String, Object> getReservationQrCode(@PathVariable Long reservationId, HttpServletRequest request) {
         try {
             // 获取当前登录用户
             Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth == null || auth.getName() == null) {
-                return ResponseEntity.status(401).body(Map.of("message", "未登录"));
+                throw new BusinessException("未登录");
             }
             
             User user = userMapper.selectOne(new LambdaQueryWrapper<User>().eq(User::getUsername, auth.getName()));
             if (user == null) {
-                return ResponseEntity.status(401).body(Map.of("message", "用户不存在"));
+                throw new BusinessException("用户不存在");
             }
             
             Reservation r = reservationMapper.selectById(reservationId);
             if (r == null) {
-                return ResponseEntity.badRequest().body(Map.of("message", "预约不存在"));
+                throw new BusinessException("预约不存在");
             }
             
             // 检查权限：用户只能获取自己预约的二维码
             if (!r.getUserId().equals(user.getId())) {
-                return ResponseEntity.status(403).body(Map.of("message", "无权访问此预约的二维码"));
+                throw BusinessException.forbidden("无权访问此预约的二维码");
             }
             
             // 检查预约状态：只有有效状态的预约才能生成二维码
             if (!List.of("ACTIVE", "CONFIRMED", "PENDING").contains(r.getStatus())) {
-                return ResponseEntity.badRequest().body(Map.of("message", "该预约状态不允许签到"));
+                throw new BusinessException("该预约状态不允许签到");
             }
             
             // 生成包含URL的二维码（供微信扫码）---->没有实现
@@ -368,47 +381,45 @@ public class AttendanceController {
             // 记录生成的二维码URL，方便调试
             log.info("生成签到二维码 - 预约ID: {}, 座位ID: {}, 二维码URL: {}", reservationId, r.getSeatId(), qrContent);
             
-            return ResponseEntity.ok(Map.of(
+            return Map.of(
                     "qrCode", qrCodeImage, 
                     "reservationId", reservationId, 
                     "seatId", r.getSeatId(),
                     "qrContent", qrContent,
-                    "qrUrl", qrContent, // 添加qrUrl字段，方便前端显示
+                    "qrUrl", qrContent,
                     "note", "请使用手机扫描此二维码进行签到",
                     "tip", "如果手机无法访问，请确保手机和电脑连接同一WiFi，并在手机浏览器中访问: " + baseUrl
-            ));
+            );
         } catch (Exception e) {
             log.error("生成预约二维码失败，预约ID: {}", reservationId, e);
-            return ResponseEntity.status(500).body(Map.of("message", "生成二维码失败: " + e.getMessage()));
+            throw new RuntimeException("生成二维码失败: " + e.getMessage());
         }
     }
 
     @Operation(summary = "开始暂离")
     @PostMapping("/leave/start")
-    public ResponseEntity<?> leaveStart(@RequestBody ActionReq req) {
+    public Map<String, Object> leaveStart(@RequestBody ActionReq req) {
         return createAction(req, "LEAVE_START", false);
     }
 
     @Operation(summary = "结束暂离")
     @PostMapping("/leave/end")
-    public ResponseEntity<?> leaveEnd(@RequestBody ActionReq req) {
+    public Map<String, Object> leaveEnd(@RequestBody ActionReq req) {
         return createAction(req, "LEAVE_END", false);
     }
 
 
-    private ResponseEntity<?> createAction(ActionReq req, String action, boolean isCheckOut) {
+    private Map<String, Object> createAction(ActionReq req, String action, boolean isCheckOut) {
         if (req.reservationId() == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "reservationId 必填"));
+            throw new BusinessException("reservationId 必填");
         }
         Reservation r = reservationMapper.selectById(req.reservationId());
-        // 允许 ACTIVE 和 CONFIRMED 状态的预约进行签到（CONFIRMED 会在开始后自动转为 ACTIVE）
         if (r == null || !List.of("ACTIVE", "CONFIRMED").contains(r.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "预约不存在或非有效状态"));
+            throw new BusinessException("预约不存在或非有效状态");
         }
         LocalDateTime now = LocalDateTime.now();
-        // 允许提前5分钟签到，开始后15分钟内可签到
         if (now.isBefore(r.getStartTime().minusMinutes(5)) || now.isAfter(r.getStartTime().plusMinutes(15))) {
-            return ResponseEntity.badRequest().body(Map.of("message", "不在允许签到时间范围内（可提前5分钟签到，开始后15分钟内可签到）"));
+            throw new BusinessException("不在允许签到时间范围内（可提前5分钟签到，开始后15分钟内可签到）");
         }
         AttendanceLog attendanceLog = new AttendanceLog();
         attendanceLog.setUserId(r.getUserId());
@@ -481,7 +492,7 @@ public class AttendanceController {
         result.put("note", attendanceLog.getNote());
         result.put("message", "CHECK_IN".equals(action) ? "签到成功" : "操作成功");
         
-        return ResponseEntity.ok(result);
+        return result;
     }
 }
 

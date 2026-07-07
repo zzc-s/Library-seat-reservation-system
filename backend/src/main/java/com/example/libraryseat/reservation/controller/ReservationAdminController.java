@@ -2,6 +2,7 @@ package com.example.libraryseat.reservation.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.example.libraryseat.common.BusinessException;
 import com.example.libraryseat.reservation.entity.Reservation;
 import com.example.libraryseat.reservation.mapper.ReservationMapper;
 import com.example.libraryseat.seat.service.SeatStatusService;
@@ -10,7 +11,6 @@ import com.example.libraryseat.user.mapper.UserMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -110,32 +110,32 @@ public class ReservationAdminController {
 
     @Operation(summary = "批准预约申请")
     @PostMapping("/{id}/approve")
-    public ResponseEntity<?> approve(@PathVariable Long id) {
+    public Map<String, String> approve(@PathVariable Long id) {
         Reservation r = reservationMapper.selectById(id);
         if (r == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "预约不存在"));
+            throw BusinessException.notFound("预约不存在");
         }
         if (!"PENDING".equals(r.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "只能审核待审核的预约"));
+            throw new BusinessException("只能审核待审核的预约");
         }
         r.setStatus("CONFIRMED");
         reservationMapper.updateById(r);
-        return ResponseEntity.ok(Map.of("message", "已批准"));
+        return Map.of("message", "已批准");
     }
 
     @Operation(summary = "拒绝预约申请")
     @PostMapping("/{id}/reject")
-    public ResponseEntity<?> reject(@PathVariable Long id) {
+    public Map<String, String> reject(@PathVariable Long id) {
         Reservation r = reservationMapper.selectById(id);
         if (r == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "预约不存在"));
+            throw BusinessException.notFound("预约不存在");
         }
         if (!"PENDING".equals(r.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "只能审核待审核的预约"));
+            throw new BusinessException("只能审核待审核的预约");
         }
         r.setStatus("CANCELLED");
         reservationMapper.updateById(r);
-        return ResponseEntity.ok(Map.of("message", "已拒绝"));
+        return Map.of("message", "已拒绝");
     }
 
     /**
@@ -145,31 +145,26 @@ public class ReservationAdminController {
     @Operation(summary = "手动释放座位（提前结束预约）")
     @PostMapping("/{id}/release")
     @Transactional
-    public ResponseEntity<?> releaseSeat(@PathVariable Long id) {
+    public Map<String, String> releaseSeat(@PathVariable Long id) {
         Reservation r = reservationMapper.selectById(id);
         if (r == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "预约不存在"));
+            throw BusinessException.notFound("预约不存在");
         }
         
-        // 只能释放进行中或已确认的预约
         if (!List.of("ACTIVE", "CONFIRMED").contains(r.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", 
-                "只能释放进行中或已确认的预约，当前状态：" + r.getStatus()));
+            throw new BusinessException("只能释放进行中或已确认的预约，当前状态：" + r.getStatus());
         }
         
-        // 将预约状态改为已取消，释放座位
         r.setStatus("CANCELLED");
         reservationMapper.updateById(r);
         
-        // 更新座位状态
         try {
             seatStatusService.onReservationCancelled(r.getSeatId());
             log.info("管理员已手动释放座位，预约ID: {}, 座位ID: {}", id, r.getSeatId());
         } catch (Exception e) {
             log.error("更新座位状态失败，座位ID: {}", r.getSeatId(), e);
-            // 即使座位状态更新失败，预约状态已更新，继续返回成功
         }
         
-        return ResponseEntity.ok(Map.of("message", "座位已释放"));
+        return Map.of("message", "座位已释放");
     }
 }

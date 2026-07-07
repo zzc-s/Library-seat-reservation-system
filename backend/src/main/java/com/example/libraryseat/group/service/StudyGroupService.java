@@ -15,6 +15,7 @@ import com.example.libraryseat.group.mapper.StudyGroupMapper;
 import com.example.libraryseat.reservation.entity.Reservation;
 import com.example.libraryseat.reservation.mapper.ReservationMapper;
 import com.example.libraryseat.common.util.SecurityUtil;
+import com.example.libraryseat.common.BusinessException;
 import com.example.libraryseat.reservation.service.PersonalReservationOverlapService;
 import com.example.libraryseat.seat.service.SeatStatusService;
 import com.example.libraryseat.user.entity.User;
@@ -22,7 +23,6 @@ import com.example.libraryseat.user.mapper.UserMapper;
 import com.example.libraryseat.websocket.SeatStatusWebSocketHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -70,22 +70,22 @@ public class StudyGroupService {
     }
 
     @Transactional
-    public ResponseEntity<?> createGroup(Map<String, Object> req) {
+    public Map<String, Object> createGroup(Map<String, Object> req) {
         try {
             String name = (String) req.get("name");
             if (name == null || name.trim().isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("message", "小组名称不能为空"));
+                throw new BusinessException("小组名称不能为空");
             }
             String normalizedName = name.trim();
             if (normalizedName.length() > 100) {
-                return ResponseEntity.badRequest().body(Map.of("message", "小组名称长度不能超过100个字符"));
+                throw new BusinessException("小组名称长度不能超过100个字符");
             }
 
             // 禁止重名（避免出现多个同名小组导致用户无法区分）
             StudyGroup nameExists = groupMapper.selectOne(
                     new LambdaQueryWrapper<StudyGroup>().eq(StudyGroup::getName, normalizedName));
             if (nameExists != null) {
-                return ResponseEntity.badRequest().body(Map.of("message", "小组名称已存在，请换一个名称"));
+                throw new BusinessException("小组名称已存在，请换一个名称");
             }
             
             Long leaderId = securityUtil.currentUserId();
@@ -115,27 +115,27 @@ public class StudyGroupService {
             
             log.info("用户 {} 创建了小组 {}", leaderId, group.getId());
             pushGroupChanged("group_created", group.getId());
-            return ResponseEntity.ok(Map.of("id", group.getId(), "name", group.getName(), "message", "小组创建成功"));
+            return Map.of("id", group.getId(), "name", group.getName(), "message", "小组创建成功");
         } catch (IllegalStateException e) {
             log.error("创建小组时获取用户ID失败", e);
-            return ResponseEntity.status(401).body(Map.of("message", "未登录或登录已过期"));
+            throw BusinessException.forbidden("未登录或登录已过期");
         } catch (Exception e) {
             log.error("创建小组失败", e);
-            return ResponseEntity.status(500).body(Map.of("message", "创建失败：" + e.getMessage()));
+            throw BusinessException.internalError("创建失败：" + e.getMessage());
         }
     }
     
     @Transactional
-    public ResponseEntity<?> publishGroup(Long groupId, Map<String, Object> req) {
+    public Map<String, Object> publishGroup(Long groupId, Map<String, Object> req) {
         Long userId = securityUtil.currentUserId();
         StudyGroup group = groupMapper.selectById(groupId);
         if (group == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "小组不存在"));
+            throw BusinessException.notFound("小组不存在");
         }
         
         // 只有组长可以发布
         if (!group.getLeaderId().equals(userId)) {
-            return ResponseEntity.status(403).body(Map.of("message", "只有组长可以发布小组"));
+            throw BusinessException.forbidden("只有组长可以发布小组");
         }
         
         // 检查是否已有协同预约（至少需要有一个协同预约才能发布）
@@ -145,8 +145,8 @@ public class StudyGroupService {
                         .in(GroupReservation::getStatus, List.of("PENDING", "CONFIRMED")));
         
         if (existingReservations.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("message", 
-                    "发布小组前需要先创建协同预约（设置座位和时间），请先创建协同预约后再发布"));
+            throw new BusinessException(
+                    "发布小组前需要先创建协同预约（设置座位和时间），请先创建协同预约后再发布");
         }
         
         // 验证预约起始时间
@@ -156,10 +156,10 @@ public class StudyGroupService {
                 String timeStr = req.get("reservationStartTime").toString();
                 reservationStartTime = LocalDateTime.parse(timeStr);
             } catch (Exception e) {
-                return ResponseEntity.badRequest().body(Map.of("message", "预约起始时间格式错误"));
+                throw new BusinessException("预约起始时间格式错误");
             }
         } else {
-            return ResponseEntity.badRequest().body(Map.of("message", "发布小组需要设置预约起始时间"));
+            throw new BusinessException("发布小组需要设置预约起始时间");
         }
         
         // 更新小组状态
@@ -169,22 +169,22 @@ public class StudyGroupService {
         
         log.info("小组 {} 已发布，预约起始时间：{}，已有 {} 个协同预约", groupId, reservationStartTime, existingReservations.size());
         pushGroupChanged("group_published", groupId);
-        return ResponseEntity.ok(Map.of("message", "小组已发布"));
+        return Map.of("message", "小组已发布");
     }
     
     @Transactional
-    public ResponseEntity<?> deleteGroup(Long groupId) {
+    public Map<String, Object> deleteGroup(Long groupId) {
         try {
             Long userId = securityUtil.currentUserId();
             StudyGroup group = groupMapper.selectById(groupId);
             if (group == null) {
-                return ResponseEntity.status(404).body(Map.of("message", "小组不存在"));
+                throw BusinessException.notFound("小组不存在");
             }
             
             // 只有组长可以删除
             if (!group.getLeaderId().equals(userId)) {
                 log.warn("用户 {} 尝试删除小组 {}，但用户不是组长（组长ID: {}）", userId, groupId, group.getLeaderId());
-                return ResponseEntity.status(403).body(Map.of("message", "只有组长可以删除小组"));
+                throw BusinessException.forbidden("只有组长可以删除小组");
             }
             // 不允许直接删除仍有进行中协同预约的小组，先取消预约再删除
             long activeGroupReservations = reservationMapper.selectCount(
@@ -194,9 +194,7 @@ public class StudyGroupService {
                             .ge(GroupReservation::getEndTime, LocalDateTime.now())
             );
             if (activeGroupReservations > 0) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "message", "当前还有小组成员进行预约中，请先取消协同预约（或等待预约结束）后再删除小组"
-                ));
+                throw new BusinessException("当前还有小组成员进行预约中，请先取消协同预约（或等待预约结束）后再删除小组");
             }
             
             // 删除前先处理该小组关联的协同预约与个人预约，避免遗留“孤儿预约”
@@ -238,16 +236,16 @@ public class StudyGroupService {
             
             log.info("用户 {} 已删除小组 {}，并取消 {} 条关联个人预约", userId, groupId, cancelledPersonalCount);
             pushGroupChanged("group_deleted", groupId);
-            return ResponseEntity.ok(Map.of(
+            return Map.of(
                     "message", "小组已删除",
                     "cancelledPersonalReservations", cancelledPersonalCount
-            ));
+            );
         } catch (IllegalStateException e) {
             log.error("删除小组时获取用户ID失败，小组ID: {}", groupId, e);
-            return ResponseEntity.status(401).body(Map.of("message", "未登录或登录已过期"));
+            throw BusinessException.forbidden("未登录或登录已过期");
         } catch (Exception e) {
             log.error("删除小组失败，小组ID: {}", groupId, e);
-            return ResponseEntity.status(500).body(Map.of("message", "删除失败：" + e.getMessage()));
+            throw BusinessException.internalError("删除失败：" + e.getMessage());
         }
     }
 
@@ -350,11 +348,11 @@ public class StudyGroupService {
     }
 
     @Transactional
-    public ResponseEntity<?> requestJoinGroup(Long groupId) {
+    public Map<String, Object> requestJoinGroup(Long groupId) {
         Long userId = securityUtil.currentUserId();
         StudyGroup group = groupMapper.selectById(groupId);
         if (group == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "小组不存在"));
+            throw BusinessException.notFound("小组不存在");
         }
         
         // 检查是否已经是成员
@@ -363,7 +361,7 @@ public class StudyGroupService {
                         .eq(GroupMember::getGroupId, groupId)
                         .eq(GroupMember::getUserId, userId));
         if (existing != null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "已经是小组成员"));
+            throw new BusinessException("已经是小组成员");
         }
         
         // 检查是否已有待处理的申请
@@ -373,7 +371,7 @@ public class StudyGroupService {
                         .eq(GroupJoinRequest::getUserId, userId)
                         .eq(GroupJoinRequest::getStatus, "PENDING"));
         if (existingRequest != null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "已提交申请，等待组长审批"));
+            throw new BusinessException("已提交申请，等待组长审批");
         }
 
         // 若协同预约已结束/不存在未结束预约，则禁止再申请加入（避免结束后仍可申请 + 打扰组长）
@@ -385,7 +383,7 @@ public class StudyGroupService {
                         .ge(GroupReservation::getEndTime, now)
         );
         if (activeReservationCount == 0) {
-            return ResponseEntity.badRequest().body(Map.of("message", "该小组协同预约已结束，暂不可申请加入"));
+            throw new BusinessException("该小组协同预约已结束，暂不可申请加入");
         }
 
         // 若该小组存在已确认且未结束的协同预约，则在“提交申请”阶段就拦截满员，避免无意义地打扰组长
@@ -400,19 +398,17 @@ public class StudyGroupService {
             List<Long> seatIds = parseSeatIds(activeConfirmed.getSeatIds());
             long memberCount = memberMapper.selectCount(new LambdaQueryWrapper<GroupMember>().eq(GroupMember::getGroupId, groupId));
             if (seatIds.size() > 0 && memberCount >= seatIds.size()) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "message",
-                        String.format("该小组成员已满（%d/%d），暂不可申请加入。", memberCount, seatIds.size())
-                ));
+                throw new BusinessException(
+                        String.format("该小组成员已满（%d/%d），暂不可申请加入。", memberCount, seatIds.size()));
             }
         }
         
         // 验证小组是否已发布且预约起始时间已到
         if (!Boolean.TRUE.equals(group.getIsPublished())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "小组尚未发布，无法申请"));
+            throw new BusinessException("小组尚未发布，无法申请");
         }
         if (group.getReservationStartTime() != null && now.isBefore(group.getReservationStartTime())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "小组预约尚未开始，无法申请"));
+            throw new BusinessException("小组预约尚未开始，无法申请");
         }
         
         // 申请人个人预约与小组未结束的协同时段不得交叉（否则批准后无法为其落座）
@@ -426,8 +422,8 @@ public class StudyGroupService {
                     userId, gr.getStartTime(), gr.getEndTime(), null)) {
                 log.warn("用户 {} 申请加入小组 {} 被拒：与个人预约在时段 {} - {} 重叠",
                         userId, groupId, gr.getStartTime(), gr.getEndTime());
-                return ResponseEntity.status(409).body(Map.of("message",
-                        "该协同小组预约时间与您的原有个人预约冲突，如需协同预约请先取消原有个人预约。"));
+                throw BusinessException.conflict(
+                        "该协同小组预约时间与您的原有个人预约冲突，如需协同预约请先取消原有个人预约。");
             }
         }
         
@@ -455,7 +451,7 @@ public class StudyGroupService {
         
         log.info("用户 {} 申请加入小组 {}", userId, groupId);
         pushGroupChanged("join_requested", groupId);
-        return ResponseEntity.ok(Map.of("message", "申请已提交，等待组长审批"));
+        return Map.of("message", "申请已提交，等待组长审批");
     }
     
     public List<Map<String, Object>> getJoinRequests(Long groupId) {
@@ -490,26 +486,26 @@ public class StudyGroupService {
     }
     
     @Transactional
-    public ResponseEntity<?> approveJoinRequest(Long groupId, Long requestId) {
+    public Map<String, Object> approveJoinRequest(Long groupId, Long requestId) {
         Long userId = securityUtil.currentUserId();
         StudyGroup group = groupMapper.selectById(groupId);
         if (group == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "小组不存在"));
+            throw BusinessException.notFound("小组不存在");
         }
         
         // 只有组长可以审批
         if (!group.getLeaderId().equals(userId)) {
-            return ResponseEntity.status(403).body(Map.of("message", "只有组长可以审批申请"));
+            throw BusinessException.forbidden("只有组长可以审批申请");
         }
         
         GroupJoinRequest request = joinRequestMapper.selectById(requestId);
         if (request == null || !request.getGroupId().equals(groupId)) {
-            return ResponseEntity.status(404).body(Map.of("message", "申请不存在"));
+            throw BusinessException.notFound("申请不存在");
         }
         
         // 检查申请状态
         if (!"PENDING".equals(request.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "申请已处理，无法重复审批"));
+            throw new BusinessException("申请已处理，无法重复审批");
         }
 
         // 检查用户是否已经是成员（避免重复添加）
@@ -535,11 +531,9 @@ public class StudyGroupService {
             for (GroupReservation gr : confirmedReservationsForCapacityCheck) {
                 List<Long> seatIds = parseSeatIds(gr.getSeatIds());
                 if (seatIds.size() < nextMemberCount) {
-                    return ResponseEntity.badRequest().body(Map.of(
-                            "message",
+                    throw new BusinessException(
                             String.format("座位数量不足，无法批准更多成员：该小组在 %s - %s 的协同预约仅选择了 %d 个座位，但审批后成员将达到 %d 人。",
-                                    gr.getStartTime(), gr.getEndTime(), seatIds.size(), nextMemberCount)
-                    ));
+                                    gr.getStartTime(), gr.getEndTime(), seatIds.size(), nextMemberCount));
                 }
             }
         }
@@ -708,30 +702,30 @@ public class StudyGroupService {
         }
         
         pushGroupChanged("join_approved", groupId);
-        return ResponseEntity.ok(response);
+        return response;
     }
     
     @Transactional
-    public ResponseEntity<?> rejectJoinRequest(Long groupId, Long requestId) {
+    public Map<String, Object> rejectJoinRequest(Long groupId, Long requestId) {
         Long userId = securityUtil.currentUserId();
         StudyGroup group = groupMapper.selectById(groupId);
         if (group == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "小组不存在"));
+            throw BusinessException.notFound("小组不存在");
         }
         
         // 只有组长可以审批
         if (!group.getLeaderId().equals(userId)) {
-            return ResponseEntity.status(403).body(Map.of("message", "只有组长可以审批申请"));
+            throw BusinessException.forbidden("只有组长可以审批申请");
         }
         
         GroupJoinRequest request = joinRequestMapper.selectById(requestId);
         if (request == null || !request.getGroupId().equals(groupId)) {
-            return ResponseEntity.status(404).body(Map.of("message", "申请不存在"));
+            throw BusinessException.notFound("申请不存在");
         }
         
         // 检查申请状态
         if (!"PENDING".equals(request.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "申请已处理，无法重复审批"));
+            throw new BusinessException("申请已处理，无法重复审批");
         }
         
         // 拒绝申请
@@ -752,7 +746,7 @@ public class StudyGroupService {
         
         log.info("组长 {} 拒绝了用户 {} 加入小组 {} 的申请", userId, request.getUserId(), groupId);
         pushGroupChanged("join_rejected", groupId);
-        return ResponseEntity.ok(Map.of("message", "申请已拒绝"));
+        return Map.of("message", "申请已拒绝");
     }
     
     public List<Map<String, Object>> getMyJoinRequests() {
@@ -776,15 +770,15 @@ public class StudyGroupService {
     }
 
     @Transactional
-    public ResponseEntity<?> createGroupReservation(Long groupId,
-                                                     Map<String, Object> req) {
+    public GroupReservation createGroupReservation(Long groupId,
+                                                   Map<String, Object> req) {
         Long userId = securityUtil.currentUserId();
         
         // 检查用户是否在黑名单中
         User user = userMapper.selectById(userId);
         if (user != null && Boolean.TRUE.equals(user.getIsBlacklisted())) {
             log.warn("用户 {} 在黑名单中，拒绝协同预约请求", userId);
-            return ResponseEntity.status(403).body(Map.of("message", "您的账号已被加入黑名单，无法预约座位。如有疑问，请联系管理员。"));
+            throw BusinessException.forbidden("您的账号已被加入黑名单，无法预约座位。如有疑问，请联系管理员。");
         }
         
         GroupMember member = memberMapper.selectOne(
@@ -792,11 +786,11 @@ public class StudyGroupService {
                         .eq(GroupMember::getGroupId, groupId)
                         .eq(GroupMember::getUserId, userId));
         if (member == null) {
-            return ResponseEntity.status(403).body(Map.of("message", "不是小组成员"));
+            throw BusinessException.forbidden("不是小组成员");
         }
         // 约束：仅组长可创建协同预约草稿，避免成员误建多条草稿
         if (!"LEADER".equals(member.getRole())) {
-            return ResponseEntity.status(403).body(Map.of("message", "只有组长可以创建协同预约"));
+            throw BusinessException.forbidden("只有组长可以创建协同预约");
         }
         
         @SuppressWarnings("unchecked")
@@ -808,7 +802,7 @@ public class StudyGroupService {
         
         // 验证：协同预约至少需要2个座位
         if (seatIds.size() < 2) {
-            return ResponseEntity.badRequest().body(Map.of("message", "协同预约至少需要选择2个座位"));
+            throw new BusinessException("协同预约至少需要选择2个座位");
         }
         
         String startTimeStr = req.get("startTime").toString();
@@ -820,13 +814,13 @@ public class StudyGroupService {
         // 验证时间
         LocalDateTime now = LocalDateTime.now();
         if (!startTime.isAfter(now)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "开始时间必须是未来时间"));
+            throw new BusinessException("开始时间必须是未来时间");
         }
         if (!endTime.isAfter(startTime)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "结束时间需晚于开始时间"));
+            throw new BusinessException("结束时间需晚于开始时间");
         }
         if (java.time.Duration.between(startTime, endTime).toHours() > 4) {
-            return ResponseEntity.badRequest().body(Map.of("message", "单次预约不超过4小时"));
+            throw new BusinessException("单次预约不超过4小时");
         }
         
         // 检查每个座位是否有时间冲突（包括个人预约和协同预约）
@@ -934,11 +928,7 @@ public class StudyGroupService {
             log.error("❌ 创建协同预约失败：座位 {} 在时间段 {} - {} 有冲突", 
                     conflictedSeats, startTime, endTime);
             log.error("冲突详情：{}", conflictDetails);
-            return ResponseEntity.status(409).body(Map.of(
-                    "message", "部分座位在该时段已被预约，无法创建",
-                    "conflictedSeats", conflictedSeats,
-                    "conflictDetails", new ArrayList<>(conflictDetails.values())
-            ));
+            throw BusinessException.conflict("部分座位在该时段已被预约，无法创建");
         }
         
         log.info("✅ 座位冲突检查通过：座位 {} 在时间段 {} - {} 无冲突", seatIds, startTime, endTime);
@@ -960,11 +950,7 @@ public class StudyGroupService {
                 log.error("❌ 最终检查发现冲突：座位 {} 在时间段 {} - {} 已被预约 ID: {} 占用（用户: {}, 时间: {} - {}）", 
                         seatId, startTime, endTime, conflict.getId(), conflict.getUserId(), 
                         conflict.getStartTime(), conflict.getEndTime());
-                return ResponseEntity.status(409).body(Map.of(
-                        "message", "座位在该时段已被预约，无法创建",
-                        "conflictedSeat", seatId,
-                        "conflictReservationId", conflict.getId()
-                ));
+                throw BusinessException.conflict("座位在该时段已被预约，无法创建");
             }
         }
         log.info("========== 最终检查通过 ==========");
@@ -982,7 +968,7 @@ public class StudyGroupService {
                 groupId, gr.getId(), gr.getSeatIds(), startTime, endTime);
         
         pushGroupChanged("group_reservation_created", groupId);
-        return ResponseEntity.ok(gr);
+        return gr;
     }
 
     public List<Map<String, Object>> getGroupMembers(Long groupId) {
@@ -1020,32 +1006,32 @@ public class StudyGroupService {
     }
     
     @Transactional
-    public ResponseEntity<?> confirmGroupReservation(Long groupId, Long reservationId) {
+    public Map<String, Object> confirmGroupReservation(Long groupId, Long reservationId) {
         Long userId = securityUtil.currentUserId();
         
         // 只有组长可以确认预约
         StudyGroup group = groupMapper.selectById(groupId);
         if (group == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "小组不存在"));
+            throw BusinessException.notFound("小组不存在");
         }
         if (!group.getLeaderId().equals(userId)) {
-            return ResponseEntity.status(403).body(Map.of("message", "只有组长可以确认预约"));
+            throw BusinessException.forbidden("只有组长可以确认预约");
         }
         // 约束：必须先发布小组并达到开放时间
         if (!Boolean.TRUE.equals(group.getIsPublished())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "小组未发布，不能确认协同预约"));
+            throw new BusinessException("小组未发布，不能确认协同预约");
         }
         if (group.getReservationStartTime() == null || LocalDateTime.now().isBefore(group.getReservationStartTime())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "未到小组开放时间，不能确认协同预约"));
+            throw new BusinessException("未到小组开放时间，不能确认协同预约");
         }
         
         GroupReservation gr = reservationMapper.selectById(reservationId);
         if (gr == null || !gr.getGroupId().equals(groupId)) {
-            return ResponseEntity.status(404).body(Map.of("message", "预约不存在"));
+            throw BusinessException.notFound("预约不存在");
         }
         
         if (!"PENDING".equals(gr.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "该预约已处理，无法重复确认"));
+            throw new BusinessException("该预约已处理，无法重复确认");
         }
         
         // 解析座位ID列表
@@ -1094,7 +1080,7 @@ public class StudyGroupService {
         
         if (validMembers.isEmpty()) {
             log.error("小组 {} 没有有效成员，无法确认预约", groupId);
-            return ResponseEntity.badRequest().body(Map.of("message", "小组没有有效成员，无法确认预约"));
+            throw new BusinessException("小组没有有效成员，无法确认预约");
         }
         
         if (validMembers.size() < members.size()) {
@@ -1119,10 +1105,8 @@ public class StudyGroupService {
         
         // 严格约束：仅在满员（成员数 == 座位数）时允许确认
         if (members.size() != seatIds.size()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "message",
-                    String.format("当前成员数（%d）与座位数（%d）不一致，需满员后才能确认预约", members.size(), seatIds.size())
-            ));
+            throw new BusinessException(
+                    String.format("当前成员数（%d）与座位数（%d）不一致，需满员后才能确认预约", members.size(), seatIds.size()));
         }
         
         // 在创建个人预约前，检查所有座位是否有时间冲突
@@ -1182,11 +1166,7 @@ public class StudyGroupService {
             }
             log.error("❌ 确认协同预约失败：座位 {} 在时间段 {} - {} 有冲突，详情: {}", 
                     conflictedSeats, gr.getStartTime(), gr.getEndTime(), conflictMessages);
-            return ResponseEntity.status(409).body(Map.of(
-                    "message", "部分座位在该时段已被预约，无法确认",
-                    "conflictedSeats", conflictedSeats,
-                    "conflicts", conflictMessages
-            ));
+            throw BusinessException.conflict("部分座位在该时段已被预约，无法确认");
         }
         
         log.info("✅ 确认预约前冲突检查通过：座位 {} 在时间段 {} - {} 无冲突", 
@@ -1273,45 +1253,39 @@ public class StudyGroupService {
             boolean allPersonalTimeOverlap = !failedMembers.isEmpty()
                     && failedMembers.stream().allMatch(s -> s.contains("该时段已有其他预约"));
             if (allPersonalTimeOverlap) {
-                return ResponseEntity.status(409).body(Map.of(
-                        "message", "该时间段已有其他预约座位，请取消预约原有预约后再协同预约"));
+                throw BusinessException.conflict("该时间段已有其他预约座位，请取消预约原有预约后再协同预约");
             }
-            return ResponseEntity.status(500).body(Map.of("message", "创建个人预约失败，请重试"));
+            throw BusinessException.internalError("创建个人预约失败，请重试");
         }
-        
-        // 如果部分成员创建失败，记录警告但不阻止确认
+
         if (createdCount < members.size()) {
-            log.warn("⚠️ 只为 {}/{} 个成员创建了个人预约", createdCount, members.size());
+            log.warn("只为 {}/{} 个成员创建了个人预约", createdCount, members.size());
             if (!failedMembers.isEmpty()) {
                 log.warn("创建失败的成员：{}", String.join(", ", failedMembers));
             }
             log.warn("成功创建的成员：{}", String.join(", ", successMembers));
         } else {
-            log.info("✅ 成功为所有 {} 个成员创建了个人预约", members.size());
+            log.info("成功为所有 {} 个成员创建了个人预约", members.size());
         }
-        
-        // 只有在至少为部分成员创建了预约的情况下，才更新协同预约状态
-        // 如果所有成员都失败，不更新状态，允许重试
+
         if (createdCount > 0) {
             gr.setStatus("CONFIRMED");
             reservationMapper.updateById(gr);
             log.info("协同预约 {} 状态已更新为 CONFIRMED", reservationId);
         }
-        
-        log.info("组长 {} 确认了小组 {} 的协同预约 {}，为 {}/{} 个成员创建了个人预约", 
+
+        log.info("组长 {} 确认了小组 {} 的协同预约 {}，为 {}/{} 个成员创建了个人预约",
                 userId, groupId, reservationId, createdCount, members.size());
-        
-        // 构建详细的返回信息
+
         Map<String, Object> response = new HashMap<>();
         response.put("message", "预约已确认");
         response.put("createdCount", createdCount);
         response.put("totalMembers", members.size());
-        
+
         if (createdCount < members.size()) {
             response.put("warning", "部分成员预约创建失败，请使用补充创建功能");
             response.put("failedMembers", failedMembers);
-            
-            // 列出所有成员及其状态
+
             List<Map<String, Object>> memberDetails = new ArrayList<>();
             for (int i = 0; i < members.size(); i++) {
                 GroupMember member = members.get(i);
@@ -1320,8 +1294,7 @@ public class StudyGroupService {
                 detail.put("userId", member.getUserId());
                 detail.put("username", user != null ? user.getUsername() : "未知");
                 detail.put("role", member.getRole());
-                
-                // 检查是否有预约
+
                 List<Reservation> existing = personalReservationMapper.selectList(
                         new LambdaQueryWrapper<Reservation>()
                                 .eq(Reservation::getUserId, member.getUserId())
@@ -1329,7 +1302,7 @@ public class StudyGroupService {
                                 .eq(Reservation::getStartTime, gr.getStartTime())
                                 .eq(Reservation::getEndTime, gr.getEndTime())
                                 .in(Reservation::getStatus, List.of("ACTIVE", "CONFIRMED", "PENDING")));
-                
+
                 detail.put("hasReservation", !existing.isEmpty());
                 if (!existing.isEmpty()) {
                     detail.put("reservationId", existing.get(0).getId());
@@ -1338,48 +1311,42 @@ public class StudyGroupService {
             }
             response.put("memberDetails", memberDetails);
         }
-        
+
         pushGroupChanged("group_reservation_confirmed", groupId);
-        return ResponseEntity.ok(response);
+        return response;
     }
-    
+
     /**
      * 检查协同预约的成员预约创建情况（调试用）
      */
-    public ResponseEntity<?> checkGroupReservationStatus(Long groupId, Long reservationId) {
-        Long userId = securityUtil.currentUserId();
-        
+    public Map<String, Object> checkGroupReservationStatus(Long groupId, Long reservationId) {
         StudyGroup group = groupMapper.selectById(groupId);
         if (group == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "小组不存在"));
+            throw BusinessException.notFound("小组不存在");
         }
-        
+
         GroupReservation gr = reservationMapper.selectById(reservationId);
         if (gr == null || !gr.getGroupId().equals(groupId)) {
-            return ResponseEntity.status(404).body(Map.of("message", "预约不存在"));
+            throw BusinessException.notFound("预约不存在");
         }
-        
-        // 获取所有小组成员
+
         List<GroupMember> members = memberMapper.selectList(
                 new LambdaQueryWrapper<GroupMember>().eq(GroupMember::getGroupId, groupId));
-        
-        // 解析座位ID列表
+
         List<Long> seatIds = parseSeatIds(gr.getSeatIds());
-        
-        // 检查每个成员的预约创建情况
+
         List<Map<String, Object>> memberStatus = new ArrayList<>();
         for (int i = 0; i < members.size() && i < seatIds.size(); i++) {
             GroupMember member = members.get(i);
             User user = userMapper.selectById(member.getUserId());
-            
-            // 查找该成员的预约
+
             List<Reservation> reservations = personalReservationMapper.selectList(
                     new LambdaQueryWrapper<Reservation>()
                             .eq(Reservation::getUserId, member.getUserId())
                             .eq(Reservation::getSeatId, seatIds.get(i))
                             .eq(Reservation::getStartTime, gr.getStartTime())
                             .eq(Reservation::getEndTime, gr.getEndTime()));
-            
+
             Map<String, Object> status = new HashMap<>();
             status.put("userId", member.getUserId());
             status.put("username", user != null ? user.getUsername() : "未知");
@@ -1396,42 +1363,42 @@ public class StudyGroupService {
             }
             memberStatus.add(status);
         }
-        
-        return ResponseEntity.ok(Map.of(
-                "groupReservationId", reservationId,
-                "groupReservationStatus", gr.getStatus(),
-                "startTime", gr.getStartTime(),
-                "endTime", gr.getEndTime(),
-                "seatIds", seatIds,
-                "memberCount", members.size(),
-                "memberStatus", memberStatus
-        ));
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("groupReservationId", reservationId);
+        result.put("groupReservationStatus", gr.getStatus());
+        result.put("startTime", gr.getStartTime());
+        result.put("endTime", gr.getEndTime());
+        result.put("seatIds", seatIds);
+        result.put("memberCount", members.size());
+        result.put("memberStatus", memberStatus);
+        return result;
     }
-    
+
     /**
      * 补充创建缺失成员的个人预约
      * 用于修复之前确认预约时部分成员预约创建失败的情况
      */
     @Transactional
-    public ResponseEntity<?> supplementGroupReservation(Long groupId, Long reservationId) {
+    public Map<String, Object> supplementGroupReservation(Long groupId, Long reservationId) {
         Long userId = securityUtil.currentUserId();
         
         // 只有组长可以操作
         StudyGroup group = groupMapper.selectById(groupId);
         if (group == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "小组不存在"));
+            throw BusinessException.notFound("小组不存在");
         }
         if (!group.getLeaderId().equals(userId)) {
-            return ResponseEntity.status(403).body(Map.of("message", "只有组长可以操作"));
+            throw BusinessException.forbidden("只有组长可以操作");
         }
         
         GroupReservation gr = reservationMapper.selectById(reservationId);
         if (gr == null || !gr.getGroupId().equals(groupId)) {
-            return ResponseEntity.status(404).body(Map.of("message", "预约不存在"));
+            throw BusinessException.notFound("预约不存在");
         }
         
         if (!"CONFIRMED".equals(gr.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "只能为已确认的预约补充创建个人预约"));
+            throw new BusinessException("只能为已确认的预约补充创建个人预约");
         }
         
         // 解析座位ID列表
@@ -1554,7 +1521,7 @@ public class StudyGroupService {
         response.put("failedMembers", failedSupplement);
         
         pushGroupChanged("group_reservation_supplemented", groupId);
-        return ResponseEntity.ok(response);
+        return response;
     }
     
     /**
@@ -1562,27 +1529,27 @@ public class StudyGroupService {
      * 取消协同预约时，会自动取消所有组员的个人预约
      */
     @Transactional
-    public ResponseEntity<?> cancelGroupReservation(Long groupId, Long reservationId) {
+    public Map<String, Object> cancelGroupReservation(Long groupId, Long reservationId) {
         Long userId = securityUtil.currentUserId();
         
         // 只有组长可以取消协同预约
         StudyGroup group = groupMapper.selectById(groupId);
         if (group == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "小组不存在"));
+            throw BusinessException.notFound("小组不存在");
         }
         if (!group.getLeaderId().equals(userId)) {
-            return ResponseEntity.status(403).body(Map.of("message", "只有组长可以取消协同预约"));
+            throw BusinessException.forbidden("只有组长可以取消协同预约");
         }
         
         GroupReservation gr = reservationMapper.selectById(reservationId);
         if (gr == null || !gr.getGroupId().equals(groupId)) {
-            return ResponseEntity.status(404).body(Map.of("message", "协同预约不存在"));
+            throw BusinessException.notFound("协同预约不存在");
         }
         
         // 只能取消 PENDING 或 CONFIRMED 状态的预约
         if (!List.of("PENDING", "CONFIRMED").contains(gr.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", 
-                    "只能取消待确认或已确认的协同预约，当前状态：" + gr.getStatus()));
+            throw new BusinessException(
+                    "只能取消待确认或已确认的协同预约，当前状态：" + gr.getStatus());
         }
         
         // 解析座位ID列表
@@ -1723,7 +1690,7 @@ public class StudyGroupService {
         }
         
         pushGroupChanged("group_reservation_cancelled", groupId);
-        return ResponseEntity.ok(response);
+        return response;
     }
 
     public List<Map<String, Object>> getNotifications() {
@@ -1767,22 +1734,22 @@ public class StudyGroupService {
         }
     }
     
-    public ResponseEntity<?> markAsRead(Long notificationId) {
+    public Map<String, Object> markAsRead(Long notificationId) {
         Long userId = securityUtil.currentUserId();
         GroupNotification notification = notificationMapper.selectById(notificationId);
         if (notification == null) {
-            return ResponseEntity.status(404).body(Map.of("message", "通知不存在"));
+            throw BusinessException.notFound("通知不存在");
         }
         if (!notification.getUserId().equals(userId)) {
-            return ResponseEntity.status(403).body(Map.of("message", "无权操作此通知"));
+            throw BusinessException.forbidden("无权操作此通知");
         }
         
         notification.setIsRead(true);
         notificationMapper.updateById(notification);
-        return ResponseEntity.ok(Map.of("message", "已标记为已读"));
+        return Map.of("message", "已标记为已读");
     }
 
-    public ResponseEntity<?> markAllAsRead() {
+    public Map<String, Object> markAllAsRead() {
         Long userId = securityUtil.currentUserId();
         int updated = notificationMapper.update(
                 null,
@@ -1791,7 +1758,7 @@ public class StudyGroupService {
                         .eq("user_id", userId)
                         .eq("is_read", false)
         );
-        return ResponseEntity.ok(Map.of("message", "已全部标记为已读", "updated", updated));
+        return Map.of("message", "已全部标记为已读", "updated", updated);
     }
 //封装广播方法
     private void pushGroupChanged(String action, Long groupId) {
