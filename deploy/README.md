@@ -17,8 +17,8 @@ yum install -y git    # Alibaba Cloud Linux / CentOS
 # apt install -y git  # Ubuntu
 
 cd /opt
-git clone https://github.com/zzc-s/SpringBoot-Vue.git
-cd SpringBoot-Vue
+git clone https://github.com/zzc-s/Library-seat-reservation-system.git
+cd Library-seat-reservation-system
 
 cp .env.example .env
 vi .env   # 填入数据库密码、JWT、邮箱授权码、FRONTEND_BASE_URL
