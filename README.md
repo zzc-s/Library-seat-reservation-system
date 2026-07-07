@@ -3,6 +3,9 @@
 基于 `Spring Boot 3 + Vue 3 + MySQL 8.0 + Redis` 的前后端分离毕设项目。  
 系统围绕“图书馆座位预约”主线，扩展了学习小组协同预约、图书借阅、违规管理、公告通知、反馈处理等完整业务闭环，支持普通用户与管理员双角色使用。
 
+**代码仓库**：https://github.com/zzc-s/Library-seat-reservation-system  
+**线上演示**（Docker 部署）：http://8.136.47.73
+
 ## 1. 项目定位
 
 - 项目类型：本科毕业设计（工程实现类）
@@ -73,13 +76,19 @@
 ```text
 .
 ├─ backend/                    # Spring Boot 后端服务
-│  ├─ src/main/java/com/example/libraryseat/
-│  └─ src/main/resources/
+│  ├─ Dockerfile
+│  └─ src/main/java/com/example/libraryseat/
 ├─ frontend/                   # Vue3 前端工程
+│  ├─ Dockerfile
 │  └─ src/
 ├─ database/
 │  └─ library_seat.sql         # 初始化 SQL
-├─ uploads/                    # 上传文件目录（头像/封面等）
+├─ deploy/                     # 云服务器部署（Nginx、生产配置、脚本）
+│  ├─ README.md
+│  ├─ nginx.conf
+│  └─ ECS部署命令.md
+├─ docker-compose.yml          # 一键启动 MySQL + Redis + 后端 + Nginx
+├─ uploads/                    # 本地上传目录（未纳入 Git，生产用 Docker 卷）
 └─ README.md
 ```
 
@@ -145,19 +154,40 @@ npm run dev
 
 > 项目已接入 Knife4j/OpenAPI，可通过后端文档入口查看接口明细（启动后按实际路径访问）。
 
-## 10. 测试账号建议
+## 10. 测试账号
 
-为便于演示，建议在数据库中预置：
+执行 `database/library_seat.sql` 后会初始化演示账号，例如：
 
-- 1 个管理员账号（用于后台功能演示）
-- 2~3 个普通用户账号（用于预约冲突、小组审批、借阅流程演示）
+- 管理员：`admin`（角色 `ADMIN`，用于后台演示）
+- 普通用户：可按需注册，或使用 SQL 中预置账号
 
-## 11. 部署建议（毕业答辩版）
+> 演示环境密码请勿使用弱口令；公开仓库勿提交真实邮箱授权码与数据库密码。
+
+## 11. 部署说明
+
+### 11.1 Docker 部署（推荐，已用于云服务器）
+
+项目已支持 `Docker Compose` 一键部署（MySQL、Redis、Spring Boot、Nginx 前端反代 + WebSocket）。
+
+```bash
+git clone https://github.com/zzc-s/Library-seat-reservation-system.git
+cd Library-seat-reservation-system
+cp .env.example .env    # 填写数据库密码、JWT、邮箱、FRONTEND_BASE_URL 等
+docker compose up -d --build
+```
+
+- 详细步骤与安全组配置：[`deploy/README.md`](deploy/README.md)
+- 服务器操作命令备忘：[`deploy/ECS部署命令.md`](deploy/ECS部署命令.md)
+- 更新代码后重建前端：`git pull && docker compose up -d --build nginx`
+
+**上传文件说明**：`uploads/`（头像、图书封面等）在 `.gitignore` 中，不会随 Git 部署。云上需在管理后台重新上传，或将文件拷贝到 Docker 卷 `uploads_data`。
+
+### 11.2 传统部署（可选）
 
 - 前端：`npm run build` 后使用 Nginx 托管静态资源
 - 后端：打包为 Jar 后以 `java -jar` 方式运行
 - 数据库与 Redis 使用独立服务
-- 配置跨域与反向代理，统一通过网关域名访问
+- 配置跨域与反向代理，统一通过网关域名访问；WebSocket 需 Nginx 配置 `Upgrade` 头（可参考 `deploy/nginx.conf`）
 
 ## 12. 项目亮点总结
 
