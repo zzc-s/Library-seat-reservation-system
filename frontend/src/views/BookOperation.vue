@@ -421,7 +421,7 @@ function closeMessage() {
 // 根据书名生成图书封面URL（图片文件名是中文书名）
 function getBookCoverUrl(book: any): string {
   if (!book.title) return ''
-  const baseUrl = 'http://localhost:8081/uploads/book-covers'
+  const baseUrl = '/uploads/book-covers'
   
   // 根据书名构建图片路径（文件名就是书名.jpg）
   // 处理特殊字符：
@@ -458,7 +458,7 @@ function handleImageError(event: Event, book: any) {
   let currentSrc = img.src
   
   // 提取基础路径（不含扩展名）
-  const baseUrl = 'http://localhost:8081/uploads/book-covers'
+  const baseUrl = '/uploads/book-covers'
   let filename = book.title.replace(/·/g, '.').trim()
   if (filename === '围城') {
     filename = '微成'

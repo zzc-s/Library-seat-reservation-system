@@ -4,7 +4,6 @@ import com.example.libraryseat.group.entity.GroupReservation;
 import com.example.libraryseat.group.service.StudyGroupService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,19 +22,19 @@ public class StudyGroupController {
 
     @Operation(summary = "创建学习小组")
     @PostMapping
-    public ResponseEntity<?> createGroup(@RequestBody Map<String, Object> req) {
+    public Map<String, Object> createGroup(@RequestBody Map<String, Object> req) {
         return studyGroupService.createGroup(req);
     }
 
     @Operation(summary = "发布学习小组")
     @PostMapping("/{groupId}/publish")
-    public ResponseEntity<?> publishGroup(@PathVariable Long groupId, @RequestBody Map<String, Object> req) {
+    public Map<String, Object> publishGroup(@PathVariable Long groupId, @RequestBody Map<String, Object> req) {
         return studyGroupService.publishGroup(groupId, req);
     }
 
     @Operation(summary = "删除学习小组")
     @DeleteMapping("/{groupId}")
-    public ResponseEntity<?> deleteGroup(@PathVariable Long groupId) {
+    public Map<String, Object> deleteGroup(@PathVariable Long groupId) {
         return studyGroupService.deleteGroup(groupId);
     }
 
@@ -47,7 +46,7 @@ public class StudyGroupController {
 
     @Operation(summary = "申请加入学习小组")
     @PostMapping("/{groupId}/join")
-    public ResponseEntity<?> requestJoinGroup(@PathVariable Long groupId) {
+    public Map<String, Object> requestJoinGroup(@PathVariable Long groupId) {
         return studyGroupService.requestJoinGroup(groupId);
     }
 
@@ -59,13 +58,13 @@ public class StudyGroupController {
 
     @Operation(summary = "批准入组申请")
     @PostMapping("/{groupId}/join-requests/{requestId}/approve")
-    public ResponseEntity<?> approveJoinRequest(@PathVariable Long groupId, @PathVariable Long requestId) {
+    public Map<String, Object> approveJoinRequest(@PathVariable Long groupId, @PathVariable Long requestId) {
         return studyGroupService.approveJoinRequest(groupId, requestId);
     }
 
     @Operation(summary = "拒绝入组申请")
     @PostMapping("/{groupId}/join-requests/{requestId}/reject")
-    public ResponseEntity<?> rejectJoinRequest(@PathVariable Long groupId, @PathVariable Long requestId) {
+    public Map<String, Object> rejectJoinRequest(@PathVariable Long groupId, @PathVariable Long requestId) {
         return studyGroupService.rejectJoinRequest(groupId, requestId);
     }
 
@@ -77,7 +76,7 @@ public class StudyGroupController {
 
     @Operation(summary = "创建小组协同预约")
     @PostMapping("/{groupId}/reservations")
-    public ResponseEntity<?> createGroupReservation(@PathVariable Long groupId,
+    public GroupReservation createGroupReservation(@PathVariable Long groupId,
                                                     @RequestBody Map<String, Object> req) {
         return studyGroupService.createGroupReservation(groupId, req);
     }
@@ -96,25 +95,25 @@ public class StudyGroupController {
 
     @Operation(summary = "确认小组协同预约")
     @PostMapping("/{groupId}/reservations/{reservationId}/confirm")
-    public ResponseEntity<?> confirmGroupReservation(@PathVariable Long groupId, @PathVariable Long reservationId) {
+    public Map<String, Object> confirmGroupReservation(@PathVariable Long groupId, @PathVariable Long reservationId) {
         return studyGroupService.confirmGroupReservation(groupId, reservationId);
     }
 
     @Operation(summary = "检查小组预约状态")
     @GetMapping("/{groupId}/reservations/{reservationId}/check")
-    public ResponseEntity<?> checkGroupReservationStatus(@PathVariable Long groupId, @PathVariable Long reservationId) {
+    public Map<String, Object> checkGroupReservationStatus(@PathVariable Long groupId, @PathVariable Long reservationId) {
         return studyGroupService.checkGroupReservationStatus(groupId, reservationId);
     }
 
     @Operation(summary = "补充小组预约信息")
     @PostMapping("/{groupId}/reservations/{reservationId}/supplement")
-    public ResponseEntity<?> supplementGroupReservation(@PathVariable Long groupId, @PathVariable Long reservationId) {
+    public Map<String, Object> supplementGroupReservation(@PathVariable Long groupId, @PathVariable Long reservationId) {
         return studyGroupService.supplementGroupReservation(groupId, reservationId);
     }
 
     @Operation(summary = "取消小组协同预约")
     @PostMapping("/{groupId}/reservations/{reservationId}/cancel")
-    public ResponseEntity<?> cancelGroupReservation(@PathVariable Long groupId, @PathVariable Long reservationId) {
+    public Map<String, Object> cancelGroupReservation(@PathVariable Long groupId, @PathVariable Long reservationId) {
         return studyGroupService.cancelGroupReservation(groupId, reservationId);
     }
 
@@ -132,13 +131,13 @@ public class StudyGroupController {
 
     @Operation(summary = "标记通知为已读")
     @PostMapping("/notifications/{notificationId}/read")
-    public ResponseEntity<?> markAsRead(@PathVariable Long notificationId) {
+    public Map<String, Object> markAsRead(@PathVariable Long notificationId) {
         return studyGroupService.markAsRead(notificationId);
     }
 
     @Operation(summary = "全部标记为已读")
     @PostMapping("/notifications/read-all")
-    public ResponseEntity<?> markAllAsRead() {
+    public Map<String, Object> markAllAsRead() {
         return studyGroupService.markAllAsRead();
     }
 }

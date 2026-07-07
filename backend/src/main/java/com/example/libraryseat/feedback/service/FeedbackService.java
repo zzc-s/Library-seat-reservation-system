@@ -126,7 +126,21 @@ public class FeedbackService {
             }
         }
 
-        sendReplyNotificationsAsync(id, newReply, feedback.getUserId(), feedback.getContent());
+        feedbackWebSocketHandler.broadcastFeedbackReply(id, newReply);
+        feedbackWebSocketHandler.broadcastFeedbackStatusUpdate(id, "PROCESSED");
+
+        User feedbackUser = userMapper.selectById(feedback.getUserId());
+        if (feedbackUser != null && feedbackUser.getEmail() != null && !feedbackUser.getEmail().isBlank()) {
+            String subject = "您的反馈已收到管理员回复";
+            String truncatedContent = feedback.getContent() != null && feedback.getContent().length() > 100
+                    ? feedback.getContent().substring(0, 100) + "..." : feedback.getContent();
+            String body = String.format(
+                    "尊敬的 %s 用户，\n\n您提交的反馈已收到管理员回复：\n\n" +
+                    "反馈内容：%s\n\n管理员回复：%s\n\n" +
+                    "感谢您对图书馆的关注与支持！\n\n此邮件由系统自动发送，请勿回复。",
+                    feedbackUser.getUsername(), truncatedContent, newReply);
+            emailService.sendReminderAsync(feedbackUser.getEmail(), subject, body);
+        }
     }
 
     public void closeFeedback(Long id) {
@@ -211,27 +225,4 @@ public class FeedbackService {
         }).collect(Collectors.toList());
     }
 
-    private void sendReplyNotificationsAsync(Long feedbackId, String adminReply, Long userId, String feedbackContent) {
-        new Thread(() -> {
-            try {
-                feedbackWebSocketHandler.broadcastFeedbackReply(feedbackId, adminReply);
-                feedbackWebSocketHandler.broadcastFeedbackStatusUpdate(feedbackId, "PROCESSED");
-
-                User user = userMapper.selectById(userId);
-                if (user != null && user.getEmail() != null && !user.getEmail().isBlank()) {
-                    String subject = "您的反馈已收到管理员回复";
-                    String truncatedContent = feedbackContent.length() > 100
-                            ? feedbackContent.substring(0, 100) + "..." : feedbackContent;
-                    String body = String.format(
-                            "尊敬的 %s 用户，\n\n您提交的反馈已收到管理员回复：\n\n" +
-                            "反馈内容：%s\n\n管理员回复：%s\n\n" +
-                            "感谢您对图书馆的关注与支持！\n\n此邮件由系统自动发送，请勿回复。",
-                            user.getUsername(), truncatedContent, adminReply);
-                    emailService.sendReminder(user.getEmail(), subject, body);
-                }
-            } catch (Exception e) {
-                log.warn("发送回复通知失败: {}", e.getMessage());
-            }
-        }).start();
-    }
 }

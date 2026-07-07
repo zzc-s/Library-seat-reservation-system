@@ -725,9 +725,6 @@ async function querySeats() {
       return { ...seat, shouldShow }
     })
     
-    // 用于分组的座位列表（包含所有座位，用于保持位置）
-    let filteredSeats = seatsWithVisibility
-    
     // 如果选择了区域，更新shouldShow标记（只显示选中区域的座位）
     if (selectedArea.value) {
       seatsWithVisibility.forEach((seat: any) => {
@@ -805,8 +802,14 @@ async function querySeats() {
     // allSeats保存所有座位（包括隐藏的），用于保持位置
     allSeats.value = seatsWithVisibility
     
-    // 显示查询结果消息，3秒后自动关闭
-    showMessage(`查询到 ${filteredSeats.length} 个座位，可用 ${data.available || 0} 个`, 'success', true)
+    // 显示查询结果消息（按筛选后的可见座位统计）
+    const visibleCount = seatsWithVisibility.filter((s: any) => s.shouldShow !== false).length
+    const availableCount = seatsWithVisibility.filter((s: any) => {
+      if (s.shouldShow === false) return false
+      const st = s.statusText || s.status
+      return st === 0 || st === 'FREE' || st === 'IDLE'
+    }).length
+    showMessage(`查询到 ${visibleCount} 个座位，可用 ${availableCount} 个`, 'success', true)
   } catch (e: any) {
     console.error('查询座位失败', e)
     showMessage('查询失败：' + (e?.response?.data?.message || e?.message || '未知错误'), 'error', true)

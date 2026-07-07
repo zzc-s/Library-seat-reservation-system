@@ -87,6 +87,18 @@ public class EmailService {
     }
     
     /**
+     * 异步发送提醒邮件（静默失败，不影响主流程）
+     */
+    @Async
+    public void sendReminderAsync(String to, String subject, String content) {
+        try {
+            sendReminder(to, subject, content);
+        } catch (RuntimeException e) {
+            log.warn("异步发送提醒邮件失败 to={}, subject={}, error={}", to, subject, e.getMessage());
+        }
+    }
+
+    /**
      * 发送预约提醒邮件（静默失败，不影响主流程）
      * @param to 收件人邮箱
      * @param subject 邮件主题
